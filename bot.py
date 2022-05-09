@@ -48,14 +48,24 @@ async def on_message(message):
 async def on_ready():
 	global channel, pools_msg
 	Log("Client connected as " + client.user.name + ' (' + str(client.user.id) + ')')
-	channel = client.get_channel(config["stats_channel"])
-	#await channel.send('aaa')
-	#return
-	#try:
-	pools_msg = await channel.fetch_message(960721537898512484)
-	#except:
-	#	pools_msg = await channel.send('Init message')
-	
+	try:
+		channel = client.get_channel(config["stats_channel"])
+		Log("Stats channel hooked")
+	except:
+		Log("Stats channel doesn't exist")
+		return
+	try:
+		pools_msg = await channel.fetch_message(channel.last_message_id) #Dawaj kurwa ostatnia wiadomosc
+		Log("Stats message fetched")
+	except:
+		try:
+			pools_msg = await channel.send('Init message')
+			Log("Channel initilized")
+		except:
+			Log("Everything fucked up, suicide yourself")
+			return
+		pass
+		
 	while True:
 		await UpdateData()
 		await asyncio.sleep(config["update_interval"])
@@ -64,10 +74,11 @@ async def on_ready():
 async def on_member_join(member):
 	Log("Member joined " + str(member.id))
 	if (member.bot):
+		Log("Member is BOT")
 		return
 	captchaChannel = await member.create_dm()
 	# Give temporary role
-	getrole = get(member.guild.roles, id = 960721840920199268) #Unverified role id
+	getrole = get(member.guild.roles, id = config["unverified_role"]) #Unverified role id
 	await member.add_roles(getrole)
 	
 	# Create captcha
@@ -77,19 +88,20 @@ async def on_member_join(member):
 
 	# Save
 	ID = member.id
-	folderPath = f"captcha/captcha_{ID}"
+	folderPath = config["captcha_workdir"]
+	captchaFile = folderPath + "/captcha_" + ID + ".png"
 	try:
 		os.mkdir(folderPath)
 	except:
-		if os.path.isdir('captcha') is False:
-			os.mkdir("captcha")
+		if os.path.isdir(folderPath) is False:
+			os.mkdir(folderPath)
 		if os.path.isdir(folderPath) is True:
-			shutil.rmtree(folderPath)
+			shutil.rmtree(folderPath) # co to kurwa jest?
 		os.mkdir(folderPath)
-	image.write(text, f"{folderPath}/captcha{ID}.png")
+	image.write(text, captchaFile)
 
 	# Send captcha
-	captchaFile = discord.File(f"{folderPath}/captcha{ID}.png")
+	captchaFile = discord.File(captchaFile)
 	# Check if it is the right user
 	def check(message):
 		if message.author == member and  message.content != "":
@@ -97,30 +109,30 @@ async def on_member_join(member):
 	await captchaChannel.send(f"**YOU MUST PASS THE CAPTCHA TO ENTER IN THE SERVER :**\nPlease {member.mention}, enter the captcha to get access to the whole server", file= captchaFile)
 	# Remove captcha folder
 	# COŚ TU POJEBANE JEST CHUJU
-	try:
-		shutil.rmtree(folderPath) 
-	except Exception as error:
-		print(f"Delete captcha file failed {error}")
+	#try:
+	#	shutil.rmtree(folderPath) 
+	#except Exception as error:
+	#	print(f"Delete captcha file failed {error}")
 	password = text.upper().split(" ")
 	password = "".join(password)
 	for tries in range(3):
 		try:
-			msg = await client.wait_for('message', timeout=120.0, check=check)
+			msg = await client.wait_for('message', timeout=config["captcha_timeout"], check=check)
 			# Check the captcha
 			if msg.content.upper() == password:
 				#embed = discord.Embed(description=f"{member.mention} passed the captcha.", color=0x2fa737) # Green
 				#await captchaChannel.send(embed = embed, delete_after = 5)
 				# Give and remove roles
 				try:
-					getrole = get(member.guild.roles, id = 960722396447408158)
+					getrole = get(member.guild.roles, id = config["verified_role"]) #verified
 					if getrole is not False:
 						await member.add_roles(getrole)
-					getrole = get(member.guild.roles, id = 960721840920199268)
+					getrole = get(member.guild.roles, id = config["unverified_role"]) #vice versa
 					if getrole is not False:
 						await member.remove_roles(getrole)
 				except Exception as error:
 					print(f"Give and remove roles failed : {error}")
-				await captchaChannel.send(f"**CAPTCHA VERIFICATION SUCESSFUL :**\nNow you are able to access server")
+				await captchaChannel.send(f"**CAPTCHA VERIFICATION SUCESSFUL :**\nNow you are able to access server") #spierdalaj z mojej ziemii
 				return
 			else:
 				#When member fails captcha
@@ -129,16 +141,16 @@ async def on_member_join(member):
 		except (asyncio.TimeoutError):
 			try:
 				#when member waits too long
-				embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = f"Reason : You exceeded the captcha response time (120s).", color = 0xff0000)
+				embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = "Reason : You exceeded the captcha response time (" + str(config["captcha_timeout"]) + "s).", color = 0xff0000)
 				await captchaChannel.send(embed = embed)
-				await member.kick() # Kick the user
+				await member.kick() # Wypierdalaj 
 				return
 			except:
 				pass
 	#When member failed captcha 3 times
 	embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = f"Reason : You failed the captcha 3 times.", color = 0xff0000)
 	await captchaChannel.send(embed = embed)
-	await member.kick() # Kick the user
+	await member.kick() # Wypierdalaj
 
 def Suffix(num):
 	if num < 1000:
@@ -147,6 +159,8 @@ def Suffix(num):
 		num = "%.2f" % (num / 1000) + " kH/s"
 	elif num < 1000000000:
 		num = "%.2f" % (num / 1000000) + " MH/s"
+	elif num < 1000000000000: #Po po po power! 
+		num = "%.2f" % (num / 1000000000) + " GH/s"
 	return num 
 
 async def UpdateData():
@@ -183,10 +197,11 @@ async def UpdateData():
 		Log("Emission fucked up")
 		return
 	try:
+		#miningpoolstats.stream API hack
 		poolsQuery = requests.get("http://miningpoolstats.stream/morelo")
 		if poolsQuery.status_code == 200:
 			token = re.search('var last_time = "([^"]+)"', poolsQuery.text).group(1)
-			poolsQuery = requests.get("http://data.miningpoolstats.stream/data/morelo.js", params={'t': token}, headers={'User-Agent': ''})
+			poolsQuery = requests.get("http://data.miningpoolstats.stream/data/morelo.js", params={'t': token}, headers={'User-Agent': 'MoreloBOT'})
 			if poolsQuery.status_code == 200:
 				poolsQuery = poolsQuery.json()
 				Globals['poolsInfo'] = sorted(poolsQuery['data'], key = lambda i: i['hashrate'], reverse=True)#Jebana magia sortowania z rewersem
@@ -205,7 +220,7 @@ async def UpdateData():
 	#Update messages
 	pools = ""
 	Log("Embed magic...")
-	if Globals['poolsInfo']:
+	if Globals['poolsInfo']: #Pojebany parser do pooli
 		for pool in Globals['poolsInfo']:
 			if pool['hashrate'] >= 0:
 				pools = pools + pool['url'] + ' (Hashrate: ' + Suffix(pool['hashrate']) +')\n'
@@ -226,7 +241,8 @@ async def UpdateData():
 	embed.add_field(name="Network statistics", value=network, inline=False)
 	embed.add_field(name="Pools statistics", value=pools, inline=False)
 	embed.add_field(name="Morelo prices", value=prices, inline=False)
-	#embed.set_footer(text="Last update - " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+	#TODO add timezone
+	embed.set_footer(text="Last update - " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC+2"))
 	try:
 		await pools_msg.edit(content='', embed=embed)
 		Log("Message sent")
