@@ -4,7 +4,7 @@
 	"explorer_address"	:	"http://explorer.morelonetwork.pl/",
 	"bot_prefix"		:	"/",
 	"stats_channel"		:	0,
-	"unverifed_role"	:	0,
+	"unverifeid_role"	:	0,
 	"verified_role"		:	90,
 	"captcha_workdir"	:	"captcha",
 	"captcha_timeout"	:	120

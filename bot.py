@@ -89,7 +89,7 @@ async def on_member_join(member):
 	# Save
 	ID = member.id
 	folderPath = config["captcha_workdir"]
-	captchaFile = folderPath + "/captcha_" + ID + ".png"
+	captchaFile = folderPath + f"/captcha_{ID}.png"
 	try:
 		os.mkdir(folderPath)
 	except:
