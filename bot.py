@@ -115,11 +115,12 @@ async def on_member_join(member):
 	#	print(f"Delete captcha file failed {error}")
 	password = text.upper().split(" ")
 	password = "".join(password)
-	for tries in range(3):
+	for tries in range(config["captcha_tries"]):
 		try:
 			msg = await client.wait_for('message', timeout=config["captcha_timeout"], check=check)
 			# Check the captcha
 			if msg.content.upper() == password:
+				Log("User pass captcha")
 				#embed = discord.Embed(description=f"{member.mention} passed the captcha.", color=0x2fa737) # Green
 				#await captchaChannel.send(embed = embed, delete_after = 5)
 				# Give and remove roles
@@ -136,11 +137,13 @@ async def on_member_join(member):
 				return
 			else:
 				#When member fails captcha
+				Log("User fails captcha")
 				embed = discord.Embed(description=f"{member.mention} please try again.", color=0xca1616) # Red
 				await captchaChannel.send(embed = embed)
 		except (asyncio.TimeoutError):
 			try:
 				#when member waits too long
+				Log("Captcha timeout")
 				embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = "Reason : You exceeded the captcha response time (" + str(config["captcha_timeout"]) + "s).", color = 0xff0000)
 				await captchaChannel.send(embed = embed)
 				await member.kick() # Wypierdalaj 
@@ -148,7 +151,7 @@ async def on_member_join(member):
 			except:
 				pass
 	#When member failed captcha 3 times
-	embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = f"Reason : You failed the captcha 3 times.", color = 0xff0000)
+	embed = discord.Embed(title = f"**YOU HAVE BEEN KICKED FROM {member.guild.name}**", description = "Reason : You failed the captcha " + str(config["captcha_tries"]) + " times.", color = 0xff0000)
 	await captchaChannel.send(embed = embed)
 	await member.kick() # Wypierdalaj
 

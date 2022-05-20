@@ -8,4 +8,5 @@
 	"verified_role"		:	90,
 	"captcha_workdir"	:	"captcha",
 	"captcha_timeout"	:	120
+	"captcha_tries"		:	3
 }
