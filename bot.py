@@ -10,12 +10,14 @@ from modules.pools import *
 from modules.globals import *
 from modules.captcha import *
 from modules.hashrate import *
+from modules.difficulty import *
 
 intents = discord.Intents.all()
 client = commands.Bot(intents=intents, command_prefix=config["bot_prefix"])
 
 client.add_command(pools)
 client.add_command(hashrate)
+client.add_command(difficulty)
 
 @client.event
 async def on_message(message):
@@ -128,7 +130,7 @@ async def UpdateData():
 	"\nBTC		: Ƀ%.10f" % Globals['moreloInfo'][1]['morelo']['btc'] + \
 	"\nETH		: Ξ%.10f" % Globals['moreloInfo'][2]['morelo']['eth'] + "```"
 	embed=discord.Embed(color=0xf78803)
-	embed.set_thumbnail(url="https://raw.githubusercontent.com/morelo-network/Morelo-GUI/master/assets/logo128x128.png")
+	embed.set_thumbnail(url="https://raw.githubusercontent.com/MoreloNetwork/Graphical-Assets/master/MRL-512.png")
 	embed.add_field(name="Network statistics", value=network, inline=False)
 	embed.add_field(name="Pools statistics", value=pools, inline=False)
 	embed.add_field(name="Morelo prices", value=prices, inline=False)
