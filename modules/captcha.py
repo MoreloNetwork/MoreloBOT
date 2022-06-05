@@ -1,17 +1,18 @@
 from discord.ext import commands
 from modules.globals import *
 import discord
+from captcha.image import ImageCaptcha
 
 #Captcha function
-async def captcha(member):
+async def captcha(client, member):
 	Log("Member joined " + str(member.id))
 	if (member.bot):
 		Log("Member is BOT", ERROR)
 		return
 	captchaChannel = await member.create_dm()
 	# Give temporary role
-	getrole = get(member.guild.roles, id = config["unverified_role"]) #Unverified role id
-	await member.add_roles(getrole)
+	unverified_role = get(member.guild.roles, id = config["unverified_role"]) #Unverified role id
+	await member.add_roles(unverified_role)
 	
 	# Create captcha
 	image = ImageCaptcha(width = 350, height = 100)
@@ -51,11 +52,11 @@ async def captcha(member):
 				# Give and remove roles
 				try:
 					verified_role = get(member.guild.roles, id = config["verified_role"]) #verified
-					if getrole is not False:
-						await member.add_roles(getrole)
-					getrole = get(member.guild.roles, id = config["unverified_role"]) #vice versa
-					if getrole is not False:
-						await member.remove_roles(getrole)
+					if verified_role is not False:
+						await member.add_roles(verified_role)
+					unverified_role = get(member.guild.roles, id = config["unverified_role"]) #vice versa
+					if unverified_role is not False:
+						await member.remove_roles(unverified_role)
 					await captchaChannel.send(f"**CAPTCHA VERIFICATION SUCESSFUL :**\nNow you are able to access server") #captcha passed
 				except Exception as error:
 					Log("Give or remove role failed: " + error, ERROR)

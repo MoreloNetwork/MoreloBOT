@@ -1,9 +1,8 @@
-import discord, requests, re, asyncio, datetime, random, time, string, os
-import Augmentor, shutil
+import discord, requests, re, datetime, time, os
+import Augmentor
 from discord.ext import commands
 from discord.utils import get
 from PIL import ImageFont, ImageDraw, Image
-import json
 
 from modules.logger import *
 from modules.pools import *
@@ -54,7 +53,7 @@ async def on_ready():
 		
 @client.event
 async def on_member_join(member):
-	captcha(member)
+	await captcha(client, member)
 
 async def UpdateData():
 	Log("Querying APIs")
