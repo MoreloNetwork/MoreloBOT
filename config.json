@@ -1,7 +1,7 @@
 {
 	"access_token"		:	"TOKEN_HERE",
 	"update_interval"	:	60,
-	"explorer_address"	:	"http://explorer.morelonetwork.pl/",
+	"explorer_address"	:	"http://mrl.stx.nl:8081/",
 	"bot_prefix"		:	"/",
 	"stats_channel"		:	0,
 	"unverifeid_role"	:	0,
