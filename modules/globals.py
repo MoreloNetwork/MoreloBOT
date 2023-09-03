@@ -1,5 +1,6 @@
-import json, sys, os.path
+import json, sys, os.path, random, string, asyncio, shutil, requests, time, re, datetime, os
 from modules.logger import *
+from discord.utils import get
 
 #Variables for API data
 Globals = {
