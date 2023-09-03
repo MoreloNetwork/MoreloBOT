@@ -10,6 +10,9 @@ from modules.globals import *
 #from modules.captcha import *
 from modules.hashrate import *
 from modules.difficulty import *
+from modules.tips import *
+
+from modules.morelo import *
 
 intents = discord.Intents.all()
 client = commands.Bot(intents=intents, command_prefix=config["bot_prefix"])
@@ -17,6 +20,11 @@ client = commands.Bot(intents=intents, command_prefix=config["bot_prefix"])
 client.add_command(pools)
 client.add_command(hashrate)
 client.add_command(difficulty)
+client.add_command(address)
+client.add_command(balance)
+client.add_command(tip)
+
+connected = False
 
 @client.event
 async def on_message(message):
@@ -29,6 +37,7 @@ async def on_message(message):
 async def on_ready():
 	global channel, pools_msg
 	Log("Client connected as " + client.user.name + ' (' + str(client.user.id) + ')')
+	connected = True
 	try:
 		channel = client.get_channel(config["stats_channel"])
 		Log("Stats channel hooked")
@@ -46,10 +55,23 @@ async def on_ready():
 			Log("Everything fucked up, suicide yourself", ERROR)
 			return
 		pass
-		
-	while True:
+	morelo = Morelo(os.getcwd(), False)
+	Log("Waiting for wallet RPC")
+	for i in range(5):
+		try:
+			morelo.wallet.open("tips")
+			break
+		except:
+			time.sleep(2.5)
+	while connected:
 		await UpdateData()
-		await asyncio.sleep(config["update_interval"])
+		time.sleep(config["update_interval"])
+	Log("Main thread closing...", ERROR)
+		
+@client.event
+async def on_disconnect():
+	Log("Client disconnected...", ERROR)
+	connected = False
 		
 '''@client.event
 async def on_member_join(member):
@@ -64,46 +86,37 @@ async def UpdateData():
 			Globals['networkInfo'] = networkQuery.json()
 			Globals['networkInfo']['height'] -= 1
 			Log("Network OK")
-		else:
-			Log("Network fucked up", ERROR)
-			return
+	except:
+		Log("Network fucked up", ERROR)
+		return
+	try:
 		networkQuery = requests.get("http://80.60.19.222:38302/get_transaction_pool_stats")
 		if networkQuery.status_code == 200:
 			Globals['txpool'] = networkQuery.json()
 			Log("Transaction pool OK")
-		else:
-			Log("Transaction pool fucked up", ERROR)
-			return
+	except:
+		Log("Transaction pool fucked up", ERROR)
+		return
+	try:
 		networkQuery = requests.get("http://mrl.stx.nl:8081/api/emission")
 		if networkQuery.status_code == 200:
 			Globals['emission'] = networkQuery.json()
 			Log("Emission OK")
-		else:
-			Log("Emission fucked up", ERROR)
-			return
+	except:
+		Log("Emission fucked up", ERROR)
+		return
+	try:
 		networkQuery = requests.get("http://mrl.stx.nl:8081/api/rawblock/" + str(Globals['networkInfo']['height']))
 		if networkQuery.status_code == 200:
 			Globals['topblock'] = networkQuery.json()
 			Log("Top block OK")
-
-		else:
-			Log("Top block fucked up", ERROR)
-			return
 	except:
-		Log("Update data failed", ERROR)
+		Log("Top block fucked up", ERROR)
 		return
 	try:
-		priceQuery = requests.get("https://xeggex.com/api/v2/asset/getbyticker/MRL")
+		priceQuery = requests.get("https://xeggex.com/api/v2/market/getbyid/643670143fef5ebc68e82471")
 		if priceQuery.status_code == 200:
-			Globals['moreloInfo'] = priceQuery.json()
-		'''
-		priceQuery = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=morelo&vs_currencies=btc")
-		if priceQuery.status_code == 200:
-			Globals['moreloInfo'][1] = priceQuery.json()
-		priceQuery = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=morelo&vs_currencies=eth")
-		if priceQuery.status_code == 200:
-			Globals['moreloInfo'][2] = priceQuery.json()
-		'''
+			Globals['priceInfo'] = priceQuery.json()
 		Log("Price OK")
 	except:
 		Log("Price fucked up", ERROR)
@@ -135,9 +148,10 @@ async def UpdateData():
 	"\nDifficulty   : " + str(Globals['networkInfo']['difficulty']) + \
 	"\nPending Tx's : " + str(Globals['txpool']['pool_stats']['txs_total']) + \
 	"\nBlock Hash   : " + Globals['networkInfo']['top_block_hash'][:10] + "...```"
-	prices = "```24H Volume : Unknown" + \
-	"\n24H Change : Unknown" + \
-	"\n\nUSD $		: " + Globals['moreloInfo']['usdValue'] + "```"
+	prices = "```24H Volume [MRL]: " + Globals['priceInfo']['volume'] + \
+	"\n24H Volume [USD]: " + Globals['priceInfo']['volumeSecondary'] + \
+	"\n24H Change : " + Globals['priceInfo']['changePercent'] + "%" + \
+	"\n\nUSD $		: " + Globals['priceInfo']['primaryUsdValue'] + "```"
 	embed=discord.Embed(color=0xf78803)
 	embed.set_thumbnail(url="https://raw.githubusercontent.com/MoreloNetwork/Graphical-Assets/master/MRL-512.png")
 	embed.add_field(name="Network statistics", value=network, inline=False)
