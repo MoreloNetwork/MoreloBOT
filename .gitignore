@@ -4,3 +4,7 @@ config.json
 config.json
 *.json
 config.json
+morelo-wallet-rpc.exe
+morelo-wallet-rpc.log
+config.json
+morelod.exe
