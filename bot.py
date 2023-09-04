@@ -65,7 +65,7 @@ async def on_ready():
 			time.sleep(2.5)
 	while connected:
 		await UpdateData()
-		time.sleep(config["update_interval"])
+		await asyncio.sleep(config["update_interval"])
 	Log("Main thread closing...", ERROR)
 		
 @client.event
@@ -92,10 +92,11 @@ async def UpdateData():
 	try:
 		networkQuery = requests.get("http://80.60.19.222:38302/get_transaction_pool_stats")
 		if networkQuery.status_code == 200:
-			Globals['txpool'] = networkQuery.json()
+			Globals['txpool'] = networkQuery.json(strict=False)
 			Log("Transaction pool OK")
-	except:
+	except Exception as err:
 		Log("Transaction pool fucked up", ERROR)
+		Log(err, ERROR)
 		return
 	try:
 		networkQuery = requests.get("http://mrl.stx.nl:8081/api/emission")
