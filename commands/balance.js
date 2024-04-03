@@ -47,18 +47,19 @@ export default {
 	},
 	async runSlash(interaction, hide) {
 		//
-	}
+	},
 	
-	async get_balance(address):
+	async get_balance(address) {
 		let address_index = //api.wallet.get_address_index(address)
 		// https://woodser.github.io/monero-ts/typedocs/classes/MoneroWalletRpc.html#getAddressIndex to je tu
 		let balance = //api.wallet.get_balance(address_index)
 		// https://woodser.github.io/monero-ts/typedocs/classes/MoneroWalletRpc.html#getBalance a to je tu
 		// to juz dalej parsuj jak chcesz
 		return {"balance": int(balance['result']['balance']) / 1000000000, "unlocked_balance": int(balance['result']['unlocked_balance'] / 1000000000)}
-		
+	},
 	
-	async get_wallet(user_id):
+	
+	async get_wallet(user_id) {
 		user_address = false;
 		/* ni chuja nie wiem jak to zrobic nie bede sie uczyc node
 		for user in db.getAll():
@@ -71,4 +72,5 @@ export default {
 			db.add({"user_id": int(user_id), "address": user_address})
 		return user_address
 		*/
+	}
 };
