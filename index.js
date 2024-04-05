@@ -51,7 +51,7 @@ let wallet;
 try {
 	wallet = await monero.connectToWalletRpc(!config.walletURL ? [
 		"morelo-wallet-rpc",
-		"--daemon-address", "http://localhost:38302",
+		"--daemon-address", !config.daemonURL ? "http://localhost:38302" : config.daemonURL,
 		"--rpc-bind-port", "38304",
 		"--disable-rpc-login",
 		"--wallet-dir", "wallets"
@@ -187,69 +187,75 @@ bot.on("ready", () => {
 					num /= 1000000000;
 					type = " GH/s";
 				}
-				channels.hashrate.edit({
-					name: "Hashrate: " + (Math.round(num) / 100) + type
-				});
+				try {
+					await channels.hashrate.edit({
+						name: "Hashrate: " + (Math.round(num) / 100) + type
+					});
+				} catch(ex) {
+					helper.err("Statistics:", ex);
+				}
 			}
 
 			if(channels.height != null) {
-				setTimeout(() => {
-					channels.height.edit({
+				try {
+					await channels.height.edit({
 						name: "Height: " + info.getHeight()
 					});
-				}, 1000);
+				} catch(ex) {
+					helper.err("Statistics:", ex);
+				}
 			}
 
 			if(config.explorerURL) {
 				if(channels.emission != null) {
-					setTimeout(async () => {
-						try {
-							const resp = await fetch(config.explorerURL + "/api/emission");
-							const body = await resp.json();
-							if(body.data != null && body.data.coinbase != null) {
-								// The numbers below are shifted by 2 decimal places
-								// so that there is no need for multiplication when rounding
-								let type, num = body.data.coinbase / 10000000;
-								if(num < 100000) {
-									type = " MRL";
-								} else if(num < 100000000) {
-									num /= 1000;
-									type = "k MRL";
-								} else if(num < 100000000000) {
-									num /= 1000000;
-									type = "M MRL";
-								}
-								channels.emission.edit({
-									name: "Emission: " + (Math.round(num) / 100) + type
-								});
+					try {
+						const resp = await fetch(config.explorerURL + "/api/emission");
+						const body = await resp.json();
+						if(body.data != null && body.data.coinbase != null) {
+							// The numbers below are shifted by 2 decimal places
+							// so that there is no need for multiplication when rounding
+							let type, num = body.data.coinbase / 10000000;
+							if(num < 100000) {
+								type = " MRL";
+							} else if(num < 100000000) {
+								num /= 1000;
+								type = "k MRL";
+							} else if(num < 100000000000) {
+								num /= 1000000;
+								type = "M MRL";
 							}
-						} catch {}
-					}, 2000);
+							await channels.emission.edit({
+								name: "Emission: " + (Math.round(num) / 100) + type
+							});
+						}
+					} catch(ex) {
+						helper.err("Statistics:", ex);
+					}
 				}
 
 				if(channels.lastReward != null) {
-					setTimeout(async () => {
-						try {
-							const resp = await fetch(config.explorerURL + "/api/rawblock/" + info.getHeight());
-							const body = await resp.json();
-							if(body.data != null && body.data.miner_tx != null) {
-								channels.lastReward.edit({
-									name: "Last reward: " + (Math.round(body.data.miner_tx.vout[0].amount / 10000000) / 100) + " MRL"
-								});
-							}
-						} catch(ex) {
-							helper.err(ex);
+					try {
+						const resp = await fetch(config.explorerURL + "/api/rawblock/" + info.getHeight());
+						const body = await resp.json();
+						if(body.data != null && body.data.miner_tx != null) {
+							await channels.lastReward.edit({
+								name: "Last reward: " + (Math.round(body.data.miner_tx.vout[0].amount / 10000000) / 100) + " MRL"
+							});
 						}
-					}, 3000);
+					} catch(ex) {
+						helper.err("Statistics:", ex);
+					}
 				}
 			}
 
 			if(channels.difficulty != null) {
-				setTimeout(() => {
-					channels.difficulty.edit({
+				try {
+					await channels.difficulty.edit({
 						name: "Difficulty: " + info.getDifficulty()
 					});
-				}, 4000);
+				} catch(ex) {
+					helper.err("Statistics:", ex);
+				}
 			}
 		};
 		setInterval(updateStats, 120000);
