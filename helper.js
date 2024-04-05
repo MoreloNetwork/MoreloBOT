@@ -18,23 +18,23 @@
  */
 
 export default {
-	args_min: 0, args_max: 0, hide_msg: false,
-	admin_only: false, where: 0, cooldown: 5,
-	options: [],
-	usage: "",
-	notes: "",
-	description: "Shows bot's usage",
-	aliases: [ "usage", "commands" ],
-	async run(msg, cmd, args, hide) {
-		
+	getTime() {
+		const date = new Date();
+		const hours = ("0" + date.getHours()).slice(-2);
+		const minutes = ("0" + date.getMinutes()).slice(-2);
+		const seconds = ("0" + date.getSeconds()).slice(-2);
+		return hours + ":" + minutes + ":" + seconds;
 	},
-	async runSlash(interaction, hide) {
-		
-	}/*,
-	async runUser(interaction, hide) {
-		
+	log(format, ...args) {
+		console.log("\x1B[32m[%s]\x1B[0m " + format, this.getTime(), ...args);
 	},
-	async runMessage(interaction, hide) {
-		
-	}*/
+	err(format, ...args) {
+		console.error("\x1B[31m[%s]\x1B[0m " + format, this.getTime(), ...args);
+	},
+	warn(format, ...args) {
+		console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getTime(), ...args);
+	},
+	dbg(format, ...args) {
+		console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getTime(), ...args);
+	}
 };

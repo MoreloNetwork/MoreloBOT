@@ -1,4 +1,10 @@
-config.js
-package-lock.json
 node_modules
+npm-debug.log
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+config.js
+
+# Morelo binaries
 morelo*

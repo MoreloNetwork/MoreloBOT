@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 2024 dmkng
  *
  * This file is part of MoreloBOT.
@@ -21,60 +21,67 @@ process.env.TZ = "UTC";
 
 process.title = "MoreloBOT";
 
-process.chdir(import.meta.dirname);
+process.on("unhandledRejection", (ex, promise) => {
+	helper.err("Unhandled Rejection:", ex);
+});
 
 import fs from "node:fs/promises";
-import * as Eris from "eris";
 import monero from "monero-ts";
+import fetch from "node-fetch";
+import * as Eris from "eris";
 import config from "./config.js";
+import helper from "./helper.js";
 
-console.log("Running daemon RPC...");
+helper.log(!config.daemonURL ? "Running daemon..." : "Connecting to daemon...");
 
-const daemon = await monero.connectToDaemonRpc({ cmd: [
-	"morelod"
-]});
+let daemon;
 try {
-	console.log("Height:", await daemon.getHeight());
-	console.log("TxPool:", await daemon.getTxPool());
-} catch(e) {
-	console.error("Daemon RPC:", e.toString());
+	daemon = await monero.connectToDaemonRpc(!config.daemonURL ? [
+		"morelod"
+	] : config.daemonURL);
+	helper.log(await daemon.isTrusted() ? "Daemon trusted" : "Daemon not trusted");
+} catch(ex) {
+	helper.err("Daemon:", ex.toString());
 	process.exit(1);
 }
 
-console.log("Running wallet RPC...");
+helper.log(!config.walletURL ? "Running wallet..." : "Connecting to wallet...");
 
-const wallet = await monero.connectToWalletRpc({ cmd: [
-	"morelo-wallet-rpc",
-	"--daemon-address", "http://localhost:38302",
-	"--rpc-bind-port", "38304",
-	"--disable-rpc-login",
-	"--wallet-dir", "wallets"
-]});
+let wallet;
+try {
+	wallet = await monero.connectToWalletRpc(!config.walletURL ? [
+		"morelo-wallet-rpc",
+		"--daemon-address", "http://localhost:38302",
+		"--rpc-bind-port", "38304",
+		"--disable-rpc-login",
+		"--wallet-dir", "wallets"
+	] : config.walletURL);
+} catch(ex) {
+	helper.err("Wallet:", ex.toString());
+	process.exit(1);
+}
 
-console.log("Connecting to Discord...");
+helper.log("Connecting to Discord...");
 
 const bot = new Eris.Client("Bot " + config.token, {
 	//getAllUsers: true,
 	//restMode: true,
 	disableEvents: {
-		"CHANNEL_CREATE": true,
 		"CHANNEL_DELETE": true,
-		"CHANNEL_UPDATE": true,
 		"CHANNEL_BAN_ADD": true,
 		"CHANNEL_BAN_REMOVE": true,
-		"GUILD_CREATE": true,
 		"GUILD_DELETE": true,
 		"GUILD_MEMBER_UPDATE": true,
 		"GUILD_ROLE_CREATE": true,
 		"GUILD_ROLE_DELETE": true,
 		"GUILD_ROLE_UPDATE": true,
-		"GUILD_UPDATE": true,
 		"PRESENCE_UPDATE": true,
 		"TYPING_START": true,
 		"USER_UPDATE": true,
 		"VOICE_STATE_UPDATE": true
 	},
 	intents: [
+		"guilds",
 		"guildMessages",
 		"guildMessageReactions",
 		"directMessages",
@@ -87,7 +94,7 @@ bot.editStatus("online", [ {
 	type: Eris.Constants.ActivityTypes.WATCHING
 } ]);
 
-// Loading commands and constructing registration data
+// Load commands and construct registration data
 const cmds = {};
 const cmdsReg = [];
 const cmdAliases = {};
@@ -100,7 +107,7 @@ for(let i = cmdList.length - 1; i !== -1; --i) {
 		cmds[cmdName] = cmd;
 
 		let alias = cmdName;
-		let j = (cmd.aliases !== undefined ? cmd.aliases.length : 0);
+		let j = (cmd.aliases != null && cmd.aliases.length != null ? cmd.aliases.length : 0);
 		do {
 			if(cmd.runSlash) {
 				cmdsReg.push({
@@ -135,37 +142,144 @@ for(let i = cmdList.length - 1; i !== -1; --i) {
 }
 
 bot.on("ready", () => {
-	console.log("Ready!");
+	helper.log("Discord ready!");
 
-	// Registering commands
+	// Register commands
 	//bot.bulkEditCommands(cmdsReg);
 
-	// TODO stats
-}).on("error", err => {
-	console.error("[err]", err);
+	if(config.statsChannels != null) {
+		// Resolve channels
+		const channels = {
+			hashrate: null,
+			height: null,
+			emission: null,
+			lastReward: null,
+			difficulty: null
+		};
+		for(const id in channels) {
+			if(channels.hasOwnProperty(id) && config.statsChannels[id]) {
+				const channel = bot.getChannel(config.statsChannels[id]);
+				if(channel != null &&
+					channel.permissionsOf(bot.user.id).has(Eris.Constants.Permissions.manageChannels)
+				) {
+					channels[id] = channel;
+				}
+			}
+		}
+
+		// Update channel names every 2 minutes
+		const updateStats = async () => {
+			const info = await daemon.getInfo();
+
+			if(channels.hashrate != null) {
+				// The numbers below are shifted by 2 decimal places
+				// so that there is no need for multiplication when rounding
+				let type, num = Number(info.getDifficulty()) / 1.2;
+				if(num < 100000) {
+					type = " H/s";
+				} else if(num < 100000000) {
+					num /= 1000;
+					type = " kH/s";
+				} else if(num < 100000000000) {
+					num /= 1000000;
+					type = " MH/s";
+				} else if(num < 100000000000000) {
+					num /= 1000000000;
+					type = " GH/s";
+				}
+				channels.hashrate.edit({
+					name: "Hashrate: " + (Math.round(num) / 100) + type
+				});
+			}
+
+			if(channels.height != null) {
+				setTimeout(() => {
+					channels.height.edit({
+						name: "Height: " + info.getHeight()
+					});
+				}, 1000);
+			}
+
+			if(config.explorerURL) {
+				if(channels.emission != null) {
+					setTimeout(async () => {
+						try {
+							const resp = await fetch(config.explorerURL + "/api/emission");
+							const body = await resp.json();
+							if(body.data != null && body.data.coinbase != null) {
+								// The numbers below are shifted by 2 decimal places
+								// so that there is no need for multiplication when rounding
+								let type, num = body.data.coinbase / 10000000;
+								if(num < 100000) {
+									type = " MRL";
+								} else if(num < 100000000) {
+									num /= 1000;
+									type = "k MRL";
+								} else if(num < 100000000000) {
+									num /= 1000000;
+									type = "M MRL";
+								}
+								channels.emission.edit({
+									name: "Emission: " + (Math.round(num) / 100) + type
+								});
+							}
+						} catch {}
+					}, 2000);
+				}
+
+				if(channels.lastReward != null) {
+					setTimeout(async () => {
+						try {
+							const resp = await fetch(config.explorerURL + "/api/rawblock/" + info.getHeight());
+							const body = await resp.json();
+							if(body.data != null && body.data.miner_tx != null) {
+								channels.lastReward.edit({
+									name: "Last reward: " + (Math.round(body.data.miner_tx.vout[0].amount / 10000000) / 100) + " MRL"
+								});
+							}
+						} catch(ex) {
+							helper.err(ex);
+						}
+					}, 3000);
+				}
+			}
+
+			if(channels.difficulty != null) {
+				setTimeout(() => {
+					channels.difficulty.edit({
+						name: "Difficulty: " + info.getDifficulty()
+					});
+				}, 4000);
+			}
+		};
+		setInterval(updateStats, 120000);
+		updateStats();
+	}
+}).on("error", ex => {
+	helper.err("Discord:", ex);
 }).on("warn", msg => {
-	console.warn("[warn]", msg);
-}).on("unknown", pkg => {
-	console.warn("[unknown]", pkg);
+	helper.warn("Discord:", msg);
+}).on("unknown", obj => {
+	helper.warn("Discord Unknown:", obj);
 }).on("messageCreate", msg => {
 	// TODO parsing
-}).on("interactionCreate", interaction => {
+}).on("interactionCreate", async interaction => {
 	if(interaction instanceof Eris.CommandInteraction) {
 		let cmdName = interaction.data.name;
 		let cmd = cmds[cmdName];
 		let hide = false;
-		if(cmd === undefined) {
+		if(cmd == null) {
 			cmd = cmdAliases[cmdName];
-			if(cmd !== undefined) {
+			if(cmd != null) {
 				cmd = cmds[cmd];
 			} else if(cmdName.endsWith("d")) {
 				cmdName = cmdName.slice(0, -1);
 				cmd = cmds[cmdName];
-				if(cmd !== undefined) {
+				if(cmd != null) {
 					hide = true;
 				} else {
 					cmd = cmdAliases[cmdName];
-					if(cmd !== undefined) {
+					if(cmd != null) {
 						cmd = cmds[cmd];
 						hide = true;
 					} else {
@@ -178,15 +292,15 @@ bot.on("ready", () => {
 		}
 
 		if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.USER) {
-			if(cmd.runUser !== undefined) {
-				cmd.runUser(interaction, hide);
+			if(cmd.runUser != null) {
+				await cmd.runUser(interaction, hide);
 			}
 		} else if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.MESSAGE) {
-			if(cmd.runMessage !== undefined) {
-				cmd.runMessage(interaction, hide);
+			if(cmd.runMessage != null) {
+				await cmd.runMessage(interaction, hide);
 			}
-		} else if(cmd.runSlash !== undefined) {
-			cmd.runSlash(interaction, hide);
+		} else if(cmd.runSlash != null) {
+			await cmd.runSlash(interaction, hide);
 		}
 	} else if(interaction instanceof Eris.AutocompleteInteraction) {
 		// TODO responding

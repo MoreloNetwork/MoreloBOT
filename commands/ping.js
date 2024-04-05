@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright (c) 2024 dmkng
  *
  * This file is part of MoreloBOT.
