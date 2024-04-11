@@ -18,23 +18,26 @@
  */
 
 export default {
-	getTime() {
+	getDate() {
 		const date = new Date();
-		const hours = ("0" + date.getHours()).slice(-2);
-		const minutes = ("0" + date.getMinutes()).slice(-2);
-		const seconds = ("0" + date.getSeconds()).slice(-2);
-		return hours + ":" + minutes + ":" + seconds;
+		return date.getFullYear() + "-"
+			+ ("0" + date.getMonth()).slice(-2) + "-"
+			+ ("0" + date.getDate()).slice(-2) + " "
+			+ ("0" + date.getHours()).slice(-2) + ":"
+			+ ("0" + date.getMinutes()).slice(-2) + ":"
+			+ ("0" + date.getSeconds()).slice(-2) + "."
+			+ ("00" + date.getMilliseconds()).slice(-3);
 	},
 	log(format, ...args) {
-		console.log("\x1B[32m[%s]\x1B[0m " + format, this.getTime(), ...args);
+		console.log("\x1B[32m[%s]\x1B[0m " + format, this.getDate(), ...args);
 	},
 	err(format, ...args) {
-		console.error("\x1B[31m[%s]\x1B[0m " + format, this.getTime(), ...args);
+		console.error("\x1B[31m[%s]\x1B[0m " + format, this.getDate(), ...args);
 	},
 	warn(format, ...args) {
-		console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getTime(), ...args);
+		console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getDate(), ...args);
 	},
 	dbg(format, ...args) {
-		console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getTime(), ...args);
+		console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getDate(), ...args);
 	}
 };
