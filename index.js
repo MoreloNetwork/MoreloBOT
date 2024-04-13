@@ -65,7 +65,13 @@ let daemon, wallet;
 		daemon = await monero.connectToDaemonRpc(!config.daemonURL ? [
 			binPath + "morelod" + execExt
 		] : config.daemonURL);
-		helper.log(await daemon.isTrusted() ? "Daemon trusted" : "Daemon not trusted");
+
+		const info = await daemon.getInfo();
+		if(info.getHeight() === info.getTargetHeight()) {
+			helper.log("Daemon synced");
+		} else {
+			helper.log("Daemon not synced, height: %i, target: %i", info.getHeight(), info.getTargetHeight());
+		}
 	} catch(ex) {
 		helper.err("Daemon:", ex);
 		process.exit(1);
@@ -114,6 +120,11 @@ const bot = new Eris.Client("Bot " + config.token, {
 	]
 });
 
+bot.editStatus("online", [ {
+	name: "Hello!",
+	type: Eris.Constants.ActivityTypes.WATCHING
+} ]);
+
 // It's not meant to be connected to the gateway so no options provided
 const botAddon = new Eris.Client("Bot " + config.tokenAddon);
 botAddon.on("error", ex => {
@@ -121,11 +132,6 @@ botAddon.on("error", ex => {
 }).on("warn", msg => {
 	helper.warn("Discord Addon:", msg);
 });
-
-bot.editStatus("online", [ {
-	name: "Hello!",
-	type: Eris.Constants.ActivityTypes.WATCHING
-} ]);
 
 // Load commands and construct their registration data
 const cmds = {};
@@ -193,7 +199,10 @@ bot.once("ready", async () => {
 	// Update statistics info every 1 minute
 	const updateInfo = async () => {
 		try {
-			statsInfo = await daemon.getInfo();
+			const info = await daemon.getInfo();
+			if(info.getHeight() === info.getTargetHeight()) {
+				statsInfo = info;
+			}
 		} catch(ex) {
 			helper.err("Daemon:", ex);
 		}
