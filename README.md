@@ -14,16 +14,10 @@ Welcome to the Morelo Discord Bot repository! This Discord bot is designed to en
 - **Under Development:** More commands and features will be available soon.
 
 ## Contact
-For inquiries about the Morelo Discord Bot, please join the [Morelo Discord Server](https://discord.com/invite/36HR7KmYCa) or visit the [official Morelo website](https://morelonetwork.pl/).
 
-## Developers
-- MrKris7100 ([GitHub](https://github.com/MrKris7100))
-- FlufyKitt3n ([GitHub](https://github.com/dmkng))
+- **Discord:** [discord.gg/JB9CeFW66g](https://discord.gg/JB9CeFW66g)
+- **X / Twitter:** [twitter.com/MoreloNetwork](https://twitter.com/MoreloNetwork)
+- **Facebook:** [www.facebook.com/profile.php?id=61551589695937](https://www.facebook.com/profile.php?id=61551589695937)
+- **Bitcointalk:** [bitcointalk.org/index.php?topic=5233023](https://bitcointalk.org/index.php?topic=5233023)
 
-## Morelo Community and Contributors
-We welcome contributions from the community to enhance and improve the Morelo Discord Bot. Feel free to submit bug reports, feature requests, or even contribute directly to the codebase!
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Copyright (c) 2020-2024, The Morelo Network
+**Together, let's continue to innovate and shape the future of privacy-centric finance.**
