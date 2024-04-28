@@ -21,16 +21,16 @@ process.env.TZ = "UTC";
 
 process.title = "MoreloBOT";
 
-process.on("unhandledRejection", (ex, promise) => {
-	helper.err("Unhandled rejection:", ex);
-});
-
 import fs from "node:fs/promises";
 import monero from "monero-ts";
 import fetch from "node-fetch";
 import * as Eris from "eris";
 import config from "./config.js";
 import helper from "./helper.js";
+
+process.on("unhandledRejection", (ex, promise) => {
+	helper.err("Unhandled rejection:", ex);
+});
 
 if(!config.token || !config.tokenAddon) {
 	helper.err("Invalid Discord tokens");
@@ -67,7 +67,7 @@ let daemon, wallet;
 		] : config.daemonURL);
 
 		const info = await daemon.getInfo();
-		if(info.getHeight() === info.getTargetHeight()) {
+		if(info.getHeight() >= info.getTargetHeight()) {
 			helper.log("Daemon synced");
 		} else {
 			helper.log("Daemon not synced, height: %i, target: %i", info.getHeight(), info.getTargetHeight());
@@ -93,22 +93,102 @@ let daemon, wallet;
 	}
 }
 
+// Load commands and construct their registration data
+const cmds = {};
+const cmdsReg = [];
+const cmdAliases = {};
+try {
+	const registerCmd = (cmd, name) => {
+		if(cmd.runSlash) {
+			cmdsReg.push({
+				name,
+				description: cmd.description,
+				options: cmd.options
+			});
+			cmdsReg.push({
+				name: name + "d",
+				description: cmd.description + " (response hidden)",
+				options: cmd.options
+			});
+		}
+		if(cmd.runUser) {
+			cmdsReg.push({
+				name,
+				description: cmd.description,
+				type: Eris.Constants.ApplicationCommandTypes.USER
+			});
+			cmdsReg.push({
+				name: name + "d",
+				description: cmd.description + " (response hidden)",
+				type: Eris.Constants.ApplicationCommandTypes.USER
+			});
+		}
+		if(cmd.runMessage) {
+			cmdsReg.push({
+				name,
+				description: cmd.description,
+				type: Eris.Constants.ApplicationCommandTypes.MESSAGE
+			});
+			cmdsReg.push({
+				name: name + "d",
+				description: cmd.description + " (response hidden)",
+				type: Eris.Constants.ApplicationCommandTypes.MESSAGE
+			});
+		}
+	};
+	const loadCmd = async (cmdFile, name) => {
+		const cmd = (await import(cmdFile)).default;
+
+		// Register the command
+		cmds[name] = cmd;
+		if(typeof name === "string") {
+			registerCmd(cmd, name);
+		}
+
+		// Register the command's aliases
+		if(cmd.aliases != null && cmd.aliases.length != null) {
+			for(let j = cmd.aliases.length - 1; j !== -1; --j) {
+				const alias = cmd.aliases[j];
+				cmdAliases[alias] = name;
+				if(typeof alias === "string") {
+					registerCmd(cmd, alias);
+				}
+			}
+		}
+	};
+
+	// Load the commands from the directory
+	const cmdList = await fs.readdir("commands");
+	for(let i = cmdList.length - 1; i !== -1; --i) {
+		const cmdFile = cmdList[i];
+		try {
+			if(cmdFile.endsWith(".js")) {
+				await loadCmd("./commands/" + cmdFile, cmdFile.slice(0, -3));
+			} else {
+				await loadCmd("./commands/" + cmdFile + "/index.js", cmdFile);
+			}
+		} catch(ex) {
+			helper.err("Can't load command %s:", cmdFile, ex);
+		}
+	}
+
+	// Load the bot mention command
+	await loadCmd("./mention.js", global.botMention = Symbol("botMention"));
+} catch(ex) {
+	helper.err("Can't load commands:", ex);
+}
+global.botCommands = cmds;
+
 helper.log("Connecting to Discord...");
 
 const bot = new Eris.Client("Bot " + config.token, {
 	//getAllUsers: true,
 	//restMode: true,
 	disableEvents: {
-		"CHANNEL_DELETE": true,
 		"CHANNEL_BAN_ADD": true,
 		"CHANNEL_BAN_REMOVE": true,
-		"GUILD_DELETE": true,
-		"GUILD_ROLE_CREATE": true,
-		"GUILD_ROLE_DELETE": true,
-		"GUILD_ROLE_UPDATE": true,
 		"PRESENCE_UPDATE": true,
 		"TYPING_START": true,
-		"USER_UPDATE": true,
 		"VOICE_STATE_UPDATE": true
 	},
 	intents: [
@@ -133,82 +213,30 @@ botAddon.on("error", ex => {
 	helper.warn("Discord Addon:", msg);
 });
 
-// Load commands and construct their registration data
-const cmds = {};
-const cmdsReg = [];
-const cmdAliases = {};
-try {
-	const cmdList = await fs.readdir("commands");
-	for(let i = cmdList.length - 1; i !== -1; --i) {
-		const cmdFile = cmdList[i];
-		if(cmdFile.endsWith(".js")) {
-			const cmdName = cmdFile.slice(0, -3);
-			try {
-				const cmd = (await import("./commands/" + cmdFile)).default;
-				cmds[cmdName] = cmd;
-
-				// Register the command and then its aliases
-				let alias = cmdName;
-				let j = (cmd.aliases != null && cmd.aliases.length != null ? cmd.aliases.length : 0);
-				do {
-					if(cmd.runSlash) {
-						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
-							options: cmd.options
-						});
-					}
-					if(cmd.runUser) {
-						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
-							type: Eris.Constants.ApplicationCommandTypes.USER
-						});
-					}
-					if(cmd.runMessage) {
-						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
-							type: Eris.Constants.ApplicationCommandTypes.MESSAGE
-						});
-					}
-
-					if(--j === -1) {
-						break;
-					}
-
-					alias = cmd.aliases[j];
-					cmdAliases[alias] = cmdName;
-				} while(true);
-			} catch(ex) {
-				helper.err("Command:", ex);
-			}
-		}
-	}
-} catch(ex) {
-	helper.err("Commands:", ex);
-}
-
-let statsInfo;
+const cooldown = {};
+let mention, statsTimer, statsInfo;
 bot.once("ready", async () => {
-	helper.log("Discord ready!");
+	helper.log("Discord connected!");
 
-	// Register commands
-	//bot.bulkEditCommands(cmdsReg);
+	// Cache the bot mention regexp
+	mention = new RegExp("^<@!?" + bot.user.id + ">( |$)");
+
+	// Register the commands
+	bot.bulkEditCommands(cmdsReg);
 
 	// Update statistics info every 1 minute
-	const updateInfo = async () => {
+	const updateStats = async () => {
 		try {
 			const info = await daemon.getInfo();
-			if(info.getHeight() === info.getTargetHeight()) {
+			if(info.getHeight() >= info.getTargetHeight()) {
 				statsInfo = info;
 			}
 		} catch(ex) {
 			helper.err("Daemon:", ex);
 		}
 	};
-	await updateInfo();
-	setInterval(updateInfo, 60000);
+	await updateStats();
+	statsTimer = setInterval(updateStats, 60000);
 
 	if(config.statsChannels != null) {
 		// Update statistics channel names every 2,5 minutes
@@ -287,10 +315,15 @@ bot.once("ready", async () => {
 						}
 						return "Emission: " + (Math.round(num) / 100) + type;
 					} else {
-						throw body;
+						const err = new Error("Response not OK");
+						err.body = body;
+						throw err;
 					}
 				} else {
-					throw resp.status;
+					const err = new Error("Status not OK");
+					err.status = resp.status;
+					err.body = resp.body;
+					throw err;
 				}
 			}
 		});
@@ -303,14 +336,148 @@ bot.once("ready", async () => {
 			return "Difficulty: " + statsInfo.getDifficulty();
 		});
 	}
+
+	helper.log("Discord ready!");
 }).on("error", ex => {
 	helper.err("Discord:", ex);
 }).on("warn", msg => {
 	helper.warn("Discord:", msg);
-}).on("messageCreate", msg => {
-	// TODO parsing
+}).on("messageCreate", async msg => {
+	// Ignore the message when the author is a bot
+	if(msg.author.bot) {
+		return;
+	}
+
+	// Check if the message contains the command prefix or the bot mention
+	let isMention = false;
+	if(mention.test(msg.content)) {
+		isMention = true;
+	} else if(msg.content.length <= config.prefix.length || msg.content.slice(0, config.prefix.length).toLowerCase() !== config.prefix) {
+		return;
+	}
+
+	// Split the message
+	const args = msg.content.split(/\s+/g);
+	let cmdName;
+	if(isMention) {
+		args.shift();
+		cmdName = (config.prefixMention && args.length != 0 ? args.shift() : global.botMention);
+	} else {
+		cmdName = args.shift().slice(config.prefix.length).toLowerCase();
+	}
+
+	// Find the command and check if the message has to be deleted
+	let cmd = cmds[cmdName];
+	let hide = false;
+	if(cmd == null) {
+		cmd = cmdAliases[cmdName];
+		if(cmd != null) {
+			cmd = cmds[cmd];
+		} else if(!isMention && cmdName.endsWith("d")) {
+			cmdName = cmdName.slice(0, -1);
+			cmd = cmds[cmdName];
+			if(cmd != null) {
+				hide = true;
+			} else {
+				cmd = cmdAliases[cmdName];
+				if(cmd != null) {
+					cmd = cmds[cmd];
+					hide = true;
+				} else {
+					return;
+				}
+			}
+		} else {
+			return;
+		}
+	}
+
+	try {
+		// TODO Check if the command is admin only
+
+		// Check if command can be executed
+		// 0 = Command can be executed in both the guilds and the DMs
+		// 1 = Command can be executed in the guilds only
+		// 2 = Command can be executed in the DMs only
+		if(cmd.where === 1 && !msg.guildID) {
+			helper.reply(hide, msg, "This command can be executed in the guilds only");
+			return;
+		} else if(cmd.where === 2 && msg.guildID) {
+			helper.reply(hide, msg, "This command can be executed in the DMs only");
+			return;
+		}
+
+		// Construct the syntax message
+		let syntax = "Usage: `" + (isMention ? "@" + bot.user.username : config.prefix + (hide ? cmdName + "d" : cmdName));
+		if(typeof cmd.usage === "function") {
+			syntax += " " + cmd.usage(msg, cmdName, hide);
+		} else if(cmd.usage != null) {
+			syntax += " " + cmd.usage;
+		}
+		if(typeof cmd.notes === "function") {
+			syntax += "`\n\n" + cmd.notes(msg, cmdName, hide);
+		} else if(cmd.notes != null) {
+			syntax += "`\n\n" + cmd.notes;
+		} else {
+			syntax += "`";
+		}
+
+		// Delete the message if it has to be deleted and can be deleted
+		if((cmd.hideMsg || hide) && helper.isDeletable(msg)) {
+			msg.delete().catch(ex => {
+				helper.err("Can't delete message:", ex);
+			});
+		}
+
+		// Check the arguments count, show usage if incorrect
+		if(args.length < cmd.argsMin || (cmd.argsMax !== -1 && args.length > cmd.argsMax)) {
+			helper.reply(hide, msg, syntax);
+			return;
+		}
+
+		// Check if the command is on cooldown
+		// TODO Check for the admin cooldown bypass
+		const cooldownKey = (isMention ? msg.author.id : msg.author.id  + cmdName);
+		const time = Date.now();
+		if(cooldown[cooldownKey] != null && cooldown[cooldownKey] > time) {
+			helper.reply(hide, msg, "**Cool down!** (" + helper.formatTime(cooldown[cooldownKey] - time) + " left)").then(m => {
+				setTimeout(() => {
+					m.delete().catch(ex => {
+						helper.err("Can't delete message:", ex);
+					});
+				}, Math.min(10000, cooldown[cooldownKey] - time));
+			});
+		} else {
+			// Run the command
+			try {
+				const res = await cmd.run(msg, cmdName, args, hide, daemon, wallet, statsInfo);
+				if(res === true) {
+					helper.reply(hide, msg, "Invalid arguments.\n" + syntax);
+				} else if(typeof res === "string") {
+					helper.reply(hide, msg, res + "\n" + syntax);
+				}
+			} catch(ex) {
+				if(ex === true) {
+					helper.reply(hide, msg, ":warning: **Error!** Something went wrong");
+				} else if(typeof ex === "string") {
+					helper.reply(hide, msg, ":warning: **Error!** " + ex);
+				} else {
+					helper.err("Command", cmdName, ex);
+					helper.reply(hide, msg, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
+				}
+			}
+
+			// Set cooldown
+			cooldown[cooldownKey] = Date.now() + cmd.cooldown * 1000;
+		}
+	} catch(ex) {
+		// Got error probably from MySQL
+		helper.err("Global", ex);
+		helper.reply(hide, msg, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
+	}
 }).on("interactionCreate", async interaction => {
 	if(interaction instanceof Eris.CommandInteraction) {
+		// Find the command and check if the message has to be deleted
 		let cmdName = interaction.data.name;
 		let cmd = cmds[cmdName];
 		let hide = false;
@@ -337,16 +504,69 @@ bot.once("ready", async () => {
 			}
 		}
 
-		if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.USER) {
-			if(cmd.runUser != null) {
-				await cmd.runUser(interaction, hide);
+		try {
+			// TODO Check if the command is admin only
+
+			// Check if command can be executed
+			// 0 = Command can be executed in both the guilds and the DMs
+			// 1 = Command can be executed in the guilds only
+			// 2 = Command can be executed in the DMs only
+			if(cmd.where === 1 && !interaction.guildID) {
+				helper.reply(hide, interaction, "This command can be executed in the guilds only");
+				return;
+			} else if(cmd.where === 2 && interaction.guildID) {
+				helper.reply(hide, interaction, "This command can be executed in the DMs only");
+				return;
 			}
-		} else if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.MESSAGE) {
-			if(cmd.runMessage != null) {
-				await cmd.runMessage(interaction, hide);
+
+			// Construct the syntax message
+			let syntax = "Usage: `/" + (hide ? cmdName + "d" : cmdName);
+			if(typeof cmd.usage === "function") {
+				syntax += " " + cmd.usage(msg, cmdName, hide);
+			} else if(cmd.usage != null) {
+				syntax += " " + cmd.usage;
 			}
-		} else if(cmd.runSlash != null) {
-			await cmd.runSlash(interaction, hide);
+			if(typeof cmd.notes === "function") {
+				syntax += "`\n\n" + cmd.notes(msg, cmdName, hide);
+			} else if(cmd.notes != null) {
+				syntax += "`\n\n" + cmd.notes;
+			} else {
+				syntax += "`";
+			}
+
+			// Run the command
+			try {
+				let res;
+				if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.USER) {
+					if(cmd.runUser != null) {
+						res = await cmd.runUser(bot, interaction, hide, daemon, wallet, statsInfo);
+					}
+				} else if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.MESSAGE) {
+					if(cmd.runMessage != null) {
+						res = await cmd.runMessage(bot, interaction, hide, daemon, wallet, statsInfo);
+					}
+				} else if(cmd.runSlash != null) {
+					res = await cmd.runSlash(bot, interaction, hide, daemon, wallet, statsInfo);
+				}
+				if(res === true) {
+					helper.reply(hide, interaction, "Invalid arguments.\n" + syntax);
+				} else if(typeof res === "string") {
+					helper.reply(hide, interaction, res + "\n" + syntax);
+				}
+			} catch(ex) {
+				if(ex === true) {
+					helper.reply(hide, interaction, ":warning: **Error!** Something went wrong");
+				} else if(typeof ex === "string") {
+					helper.reply(hide, interaction, ":warning: **Error!** " + ex);
+				} else {
+					helper.err("Command", cmdName, ex);
+					helper.reply(hide, interaction, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
+				}
+			}
+		} catch(ex) {
+			// Got error probably from MySQL
+			helper.err("Global", ex);
+			helper.reply(hide, msg, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
 		}
 	} else if(interaction instanceof Eris.AutocompleteInteraction) {
 		// TODO responding

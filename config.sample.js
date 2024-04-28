@@ -4,10 +4,11 @@ export default {
 	token: "", // Discord token
 	tokenAddon: "", // Discord additional token used for faster statistics updating
 	siteURL: "https://morelonetwork.pl", // Website URL
-	explorerURL: "", // Explorer URL
+	repoURL: "https://github.com/MoreloNetwork", // Repository URL
+	explorerURL: "https://explorer.morelonetwork.pl", // Explorer URL
 	daemonURL: "", // Daemon URL, creates new local instance if empty
 	walletURL: "", // Wallet URL, creates new local instance if empty
-	binariesDir: "", // Daemon/Wallet binaries directory, uses bot's directory if empty
+	binariesPath: "", // Daemon/Wallet binaries directory, uses bot's directory if empty
 	walletsPath: "", // Wallets directory, uses bot's wallets directory if empty
 	statsChannels: { // Channel IDs for displaying statistics
 		hashrate: "",

@@ -17,24 +17,21 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import config from "./config.js";
+import helper from "./helper.js";
+
 export default {
-	args_min: 0, args_max: 0, hide_msg: false,
-	admin_only: false, where: 0, cooldown: 5,
-	options: [],
+	argsMin: 0, argsMax: 0, hideMsg: false,
+	adminOnly: false, where: 0, cooldown: 5,
 	usage: "",
 	notes: "",
-	description: "Shows bot's usage",
-	aliases: [ "usage", "commands" ],
-	async run(msg, cmd, args, hide) {
-		
+	description: "Shows bot's help message",
+	aliases: [ "help" ],
+	options: [],
+	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
+		helper.reply(hide, msg, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + msg.channel.client.user.username + " usage` or `/usage` to get the command list.");
 	},
-	async runSlash(interaction, hide) {
-		
-	}/*,
-	async runUser(interaction, hide) {
-		
-	},
-	async runMessage(interaction, hide) {
-		
-	}*/
+	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
+		helper.reply(true, interaction, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + bot.user.username + " usage` or `/usage` to get the command list.");
+	}
 };

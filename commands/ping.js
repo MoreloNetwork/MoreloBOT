@@ -17,18 +17,48 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import util from "node:util";
+import { Base as ErisBase } from "eris";
+import helper from "../helper.js";
+
 export default {
-	args_min: 0, args_max: 0, hide_msg: false,
-	admin_only: false, where: 0, cooldown: 5,
-	options: [],
+	argsMin: 0, argsMax: 0, hideMsg: false,
+	adminOnly: false, where: 0, cooldown: 5,
 	usage: "",
 	notes: "",
 	description: "Shows bot's ping",
 	aliases: [ "pong" ],
-	async run(msg, cmd, args, hide) {
-		
+	options: [],
+	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
+		const timeRecv = msg.timestamp;
+		const timeNow = Date.now();
+
+		const resp = await helper.reply(hide, msg, "Pong!");
+		const timeSent = Date.now();
+
+		const { latency } = msg.channel.guild.shard;
+		if(latency === Infinity) {
+			resp.edit(util.format("Pong! Latency: %ims (:arrow_up: %ims :arrow_down: %ims)",
+				timeSent - timeRecv, timeSent - timeNow, timeNow - timeRecv));
+		} else {
+			resp.edit(util.format("Pong! Latency: %ims (:arrow_up: %ims :arrow_down: %ims)\nAPI Latency: %ims",
+				timeSent - timeRecv, timeSent - timeNow, timeNow - timeRecv, latency));
+		}
 	},
-	async runSlash(interaction, hide) {
-		
+	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
+		const timeRecv = ErisBase.getCreatedAt(interaction.id);
+		const timeNow = Date.now();
+
+		await helper.reply(hide, interaction, "Pong!");
+		const timeSent = Date.now();
+
+		const { latency } = bot.shards.get(bot.guildShardMap[interaction.guildID] || 0);
+		if(latency === Infinity) {
+			interaction.editOriginalMessage(util.format("Pong! Latency: %ims (:arrow_up: %ims :arrow_down: %ims)",
+				timeSent - timeRecv, timeSent - timeNow, timeNow - timeRecv));
+		} else {
+			interaction.editOriginalMessage(util.format("Pong! Latency: %ims (:arrow_up: %ims :arrow_down: %ims)\nAPI Latency: %ims",
+				timeSent - timeRecv, timeSent - timeNow, timeNow - timeRecv, latency));
+		}
 	}
 };
