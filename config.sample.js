@@ -17,12 +17,11 @@ export default {
 		lastReward: "",
 		difficulty: ""
 	},
-	mysql: { // MySQL connection data
-		host: "localhost",
-		port: 3306,
-		user: "root",
-		password: "",
-		database: "bot",
-		connectionLimit: 100 // Pool size
+	database: { // Knex.js connection data
+		client: "better-sqlite3",
+		connection: {
+			filename: "./bot.sqlite",
+		},
+		useNullAsDefault: true
 	}
 };

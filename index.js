@@ -23,19 +23,19 @@ process.title = "MoreloBOT";
 
 import fs from "node:fs/promises";
 import monero from "monero-ts";
-import fetch from "node-fetch";
+import knex from "knex";
 import * as Eris from "eris";
 import config from "./config.js";
 import helper from "./helper.js";
-
-process.on("unhandledRejection", (ex, promise) => {
-	helper.err("Unhandled rejection:", ex);
-});
 
 if(!config.token || !config.tokenAddon) {
 	helper.err("Invalid Discord tokens");
 	process.exit(1);
 }
+
+process.on("unhandledRejection", (ex, promise) => {
+	helper.err("Unhandled rejection:", ex);
+});
 
 let daemon, wallet;
 {
@@ -65,16 +65,20 @@ let daemon, wallet;
 		daemon = await monero.connectToDaemonRpc(!config.daemonURL ? [
 			binPath + "morelod" + execExt
 		] : config.daemonURL);
+	} catch(ex) {
+		helper.err("Daemon:", ex);
+		process.exit(1);
+	}
 
+	try {
 		const info = await daemon.getInfo();
-		if(info.getHeight() >= info.getTargetHeight()) {
+		if(info.getTargetHeight() === 0 || info.getHeight() >= info.getTargetHeight()) {
 			helper.log("Daemon synced");
 		} else {
 			helper.log("Daemon not synced, height: %i, target: %i", info.getHeight(), info.getTargetHeight());
 		}
 	} catch(ex) {
-		helper.err("Daemon:", ex);
-		process.exit(1);
+		helper.err("Daemon getInfo:", ex);
 	}
 
 	helper.log(config.walletURL ? "Connecting to wallet..." : "Running wallet...");
@@ -93,13 +97,17 @@ let daemon, wallet;
 	}
 }
 
+helper.log("Connecting to database...");
+const db = knex(config.database);
+
 // Load commands and construct their registration data
 const cmds = {};
 const cmdsReg = [];
 const cmdAliases = {};
+global.botMention = Symbol("botMention");
 try {
 	const registerCmd = (cmd, name) => {
-		if(cmd.runSlash) {
+		if(cmd.runSlash != null) {
 			cmdsReg.push({
 				name,
 				description: cmd.description,
@@ -111,7 +119,7 @@ try {
 				options: cmd.options
 			});
 		}
-		if(cmd.runUser) {
+		if(cmd.runUser != null) {
 			cmdsReg.push({
 				name,
 				description: cmd.description,
@@ -123,7 +131,7 @@ try {
 				type: Eris.Constants.ApplicationCommandTypes.USER
 			});
 		}
-		if(cmd.runMessage) {
+		if(cmd.runMessage != null) {
 			cmdsReg.push({
 				name,
 				description: cmd.description,
@@ -141,7 +149,7 @@ try {
 
 		// Register the command
 		cmds[name] = cmd;
-		if(typeof name === "string") {
+		if(name !== global.botMention) {
 			registerCmd(cmd, name);
 		}
 
@@ -150,7 +158,7 @@ try {
 			for(let j = cmd.aliases.length - 1; j !== -1; --j) {
 				const alias = cmd.aliases[j];
 				cmdAliases[alias] = name;
-				if(typeof alias === "string") {
+				if(alias !== global.botMention) {
 					registerCmd(cmd, alias);
 				}
 			}
@@ -162,10 +170,12 @@ try {
 	for(let i = cmdList.length - 1; i !== -1; --i) {
 		const cmdFile = cmdList[i];
 		try {
-			if(cmdFile.endsWith(".js")) {
-				await loadCmd("./commands/" + cmdFile, cmdFile.slice(0, -3));
-			} else {
-				await loadCmd("./commands/" + cmdFile + "/index.js", cmdFile);
+			if(cmdFile.charAt(0) !== "-") {
+				if(cmdFile.endsWith(".js")) {
+					await loadCmd("./commands/" + cmdFile, cmdFile.slice(0, -3));
+				} else if(cmdFile.indexOf(".") === -1) {
+					await loadCmd("./commands/" + cmdFile + "/index.js", cmdFile);
+				}
 			}
 		} catch(ex) {
 			helper.err("Can't load command %s:", cmdFile, ex);
@@ -173,7 +183,7 @@ try {
 	}
 
 	// Load the bot mention command
-	await loadCmd("./mention.js", global.botMention = Symbol("botMention"));
+	await loadCmd("./mention.js", global.botMention);
 } catch(ex) {
 	helper.err("Can't load commands:", ex);
 }
@@ -214,7 +224,8 @@ botAddon.on("error", ex => {
 });
 
 const cooldown = {};
-let mention, statsTimer, statsInfo;
+const timers = {};
+let mention, statsTimer, statsInfo = null;
 bot.once("ready", async () => {
 	helper.log("Discord connected!");
 
@@ -228,11 +239,11 @@ bot.once("ready", async () => {
 	const updateStats = async () => {
 		try {
 			const info = await daemon.getInfo();
-			if(info.getHeight() >= info.getTargetHeight()) {
+			if(info.getTargetHeight() === 0 || info.getHeight() >= info.getTargetHeight()) {
 				statsInfo = info;
 			}
 		} catch(ex) {
-			helper.err("Daemon:", ex);
+			helper.err("Daemon getInfo:", ex);
 		}
 	};
 	await updateStats();
@@ -269,7 +280,7 @@ bot.once("ready", async () => {
 						helper.err("Statistics:", ex);
 					}
 				}
-				setTimeout(timer, 150000);
+				timers[id] = setTimeout(timer, 150000);
 			};
 			timer();
 		};
@@ -390,6 +401,11 @@ bot.once("ready", async () => {
 		} else {
 			return;
 		}
+	}
+
+	// Check if the command is executable through the messages
+	if(cmd.run == null) {
+		return;
 	}
 
 	try {
@@ -566,7 +582,7 @@ bot.once("ready", async () => {
 		} catch(ex) {
 			// Got error probably from MySQL
 			helper.err("Global", ex);
-			helper.reply(hide, msg, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
+			helper.reply(hide, interaction, ":warning: **Error** Report this to the administration:\n```\n" + ex + "\n```");
 		}
 	} else if(interaction instanceof Eris.AutocompleteInteraction) {
 		// TODO responding

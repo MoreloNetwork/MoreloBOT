@@ -18,7 +18,6 @@
  */
 
 import util from "node:util";
-import { Base as ErisBase } from "eris";
 import helper from "../helper.js";
 
 export default {
@@ -46,7 +45,7 @@ export default {
 		}
 	},
 	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
-		const timeRecv = ErisBase.getCreatedAt(interaction.id);
+		const timeRecv = interaction.createdAt;
 		const timeNow = Date.now();
 
 		await helper.reply(hide, interaction, "Pong!");

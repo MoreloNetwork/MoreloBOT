@@ -55,6 +55,7 @@ export default {
 	aliases: [ "commands" ],
 	options: [],
 	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
+		// Try to get the executor's DM channel if the command is executed on the server
 		let channel;
 		if(msg.guildID != null) {
 			try {

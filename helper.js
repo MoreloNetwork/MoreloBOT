@@ -23,7 +23,7 @@ export default {
 	getDate() {
 		const date = new Date();
 		return date.getFullYear() + "-"
-			+ ("0" + date.getMonth()).slice(-2) + "-"
+			+ ("0" + (date.getMonth() + 1)).slice(-2) + "-"
 			+ ("0" + date.getDate()).slice(-2) + " "
 			+ ("0" + date.getHours()).slice(-2) + ":"
 			+ ("0" + date.getMinutes()).slice(-2) + ":"
@@ -31,16 +31,32 @@ export default {
 			+ ("00" + date.getMilliseconds()).slice(-3);
 	},
 	log(format, ...args) {
-		console.log("\x1B[32m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		if(typeof format === "string") {
+			console.log("\x1B[32m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		} else {
+			console.log("\x1B[32m[%s]\x1B[0m", this.getDate(), format, ...args);
+		}
 	},
 	err(format, ...args) {
-		console.error("\x1B[31m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		if(typeof format === "string") {
+			console.error("\x1B[31m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		} else {
+			console.error("\x1B[31m[%s]\x1B[0m", this.getDate(), format, ...args);
+		}
 	},
 	warn(format, ...args) {
-		console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		if(typeof format === "string") {
+			console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		} else {
+			console.warn("\x1B[33m[%s]\x1B[0m", this.getDate(), format, ...args);
+		}
 	},
 	dbg(format, ...args) {
-		console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		if(typeof format === "string") {
+			console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getDate(), ...args);
+		} else {
+			console.debug("\x1B[34m[%s]\x1B[0m", this.getDate(), format, ...args);
+		}
 	},
 	msToTime(ms) {
 		// Extract seconds
