@@ -3,9 +3,9 @@ export default {
 	prefixMention: true, // Should bot mention be a prefix instead of a command?
 	token: "", // Discord token
 	tokenAddon: "", // Discord additional token used for faster statistics updating
-	siteURL: "https://morelonetwork.pl", // Website URL
+	siteURL: "https://morelo.cc", // Website URL
 	repoURL: "https://github.com/MoreloNetwork", // Repository URL
-	explorerURL: "https://explorer.morelonetwork.pl", // Explorer URL
+	explorerURL: "https://explorer.morelo.cc", // Explorer URL
 	daemonURL: "", // Daemon URL, creates new local instance if empty
 	walletURL: "", // Wallet URL, creates new local instance if empty
 	binariesPath: "", // Daemon/Wallet binaries directory, uses bot's directory if empty
@@ -15,7 +15,9 @@ export default {
 		height: "",
 		emission: "",
 		lastReward: "",
-		difficulty: ""
+		difficulty: "",
+		xeggexUSDT: "",
+		xeggexDOGE: ""
 	},
 	database: { // Knex.js connection data
 		client: "better-sqlite3",

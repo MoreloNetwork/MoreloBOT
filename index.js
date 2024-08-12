@@ -346,6 +346,42 @@ bot.once("ready", async () => {
 		updateStat("difficulty", async () => {
 			return "Difficulty: " + statsInfo.getDifficulty();
 		});
+		updateStat("xeggexUSDT", async () => {
+			const resp = await fetch("https://api.xeggex.com/api/v2/market/getbysymbol/MRL_USDT");
+			if(resp.ok) {
+				const body = await resp.json();
+				if(body.lastPrice) {
+					return "MRL/USDT: " + body.lastPrice;
+				} else {
+					const err = new Error("Response not OK");
+					err.body = body;
+					throw err;
+				}
+			} else {
+				const err = new Error("Status not OK");
+				err.status = resp.status;
+				err.body = resp.body;
+				throw err;
+			}
+		});
+		updateStat("xeggexDOGE", async () => {
+			const resp = await fetch("https://api.xeggex.com/api/v2/market/getbysymbol/MRL_DOGE");
+			if(resp.ok) {
+				const body = await resp.json();
+				if(body.lastPrice) {
+					return "MRL/DOGE: " + body.lastPrice;
+				} else {
+					const err = new Error("Response not OK");
+					err.body = body;
+					throw err;
+				}
+			} else {
+				const err = new Error("Status not OK");
+				err.status = resp.status;
+				err.body = resp.body;
+				throw err;
+			}
+		});
 	}
 
 	helper.log("Discord ready!");
