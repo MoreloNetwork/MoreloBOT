@@ -28,10 +28,10 @@ export default {
 	description: "Shows bot's help message",
 	aliases: [ "help" ],
 	options: [],
-	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
-		helper.reply(hide, msg, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + msg.channel.client.user.username + " usage` or `/usage` to get the command list.");
+	run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
+		return helper.reply(hide, msg, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + msg.channel.client.user.username + " usage` or `/usage` to get the command list.");
 	},
-	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
-		helper.reply(true, interaction, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + bot.user.username + " usage` or `/usage` to get the command list.");
+	runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
+		return helper.reply(hide, interaction, "Hello! I'm MoreloBOT, made by Morelo Network. Type `" + config.prefix + "usage`, `@" + bot.user.username + " usage` or `/usage` to get the command list.");
 	}
 };

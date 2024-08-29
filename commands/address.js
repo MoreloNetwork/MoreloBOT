@@ -24,7 +24,7 @@ export default {
 	adminOnly: false, where: 0, cooldown: 10,
 	usage: "",
 	notes: "",
-	description: "Shows user's wallet balance",
+	description: "Shows user's wallet address",
 	aliases: [],
 	options: [],
 	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {

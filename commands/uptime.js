@@ -27,10 +27,10 @@ export default {
 	description: "Shows bot's uptime",
 	aliases: [],
 	options: [],
-	async run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
-		helper.reply(hide, msg, "Uptime: " + helper.formatTime(msg.channel.client.uptime));
+	run(msg, cmd, args, hide, daemon, wallet, statsInfo) {
+		return helper.reply(hide, msg, "Uptime: " + helper.formatTime(msg.channel.client.uptime));
 	},
-	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
-		helper.reply(hide, interaction, "Uptime: " + helper.formatTime(bot.uptime));
+	runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
+		return helper.reply(hide, interaction, "Uptime: " + helper.formatTime(bot.uptime));
 	}
 };

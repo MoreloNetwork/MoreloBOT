@@ -17,6 +17,7 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import fs from "node:fs/promises";
 import { Constants as ErisConstants } from "eris";
 
 export default {
@@ -85,6 +86,7 @@ export default {
 		const seconds = time[3] + " " + (time[3] != 1 ? timeDefs[7] : timeDefs[3]);
 		return days + hours + minutes + seconds;
 	},
+
 	isDeletable(msg) {
 		return (msg.author.id === msg.channel.client.user.id || (msg.guildID && msg.channel.permissionsOf(msg.channel.client.user.id).has(ErisConstants.Permissions.manageMessages)));
 	},
@@ -112,5 +114,122 @@ export default {
 			}
 		}
 		return msg.channel.createMessage(content, file);
+	},
+
+	async loadCmds(bot) {
+		bot.kCmds = {};
+		bot.kCmdsReg = [];
+		bot.kAliases = {};
+
+		const registerCmd = (cmd, name) => {
+			if(cmd.runSlash != null) {
+				bot.kCmdsReg.push({
+					name,
+					description: cmd.description,
+					options: cmd.options
+				});
+				bot.kCmdsReg.push({
+					name: name + "d",
+					description: cmd.description + " (response hidden)",
+					options: cmd.options
+				});
+			}
+			if(cmd.runUser != null) {
+				bot.kCmdsReg.push({
+					name,
+					description: cmd.description,
+					type: Eris.Constants.ApplicationCommandTypes.USER
+				});
+				bot.kCmdsReg.push({
+					name: name + "d",
+					description: cmd.description + " (response hidden)",
+					type: Eris.Constants.ApplicationCommandTypes.USER
+				});
+			}
+			if(cmd.runMessage != null) {
+				bot.kCmdsReg.push({
+					name,
+					description: cmd.description,
+					type: Eris.Constants.ApplicationCommandTypes.MESSAGE
+				});
+				bot.kCmdsReg.push({
+					name: name + "d",
+					description: cmd.description + " (response hidden)",
+					type: Eris.Constants.ApplicationCommandTypes.MESSAGE
+				});
+			}
+		};
+
+		try {
+			const loadCmd = async (cmdFile, name) => {
+				const cmd = (await import(cmdFile)).default;
+
+				// Register the command
+				bot.kCmds[name] = cmd;
+				if(name !== bot.kMention) {
+					registerCmd(cmd, name);
+				}
+
+				// Register the command's aliases
+				if(cmd.aliases != null && cmd.aliases.length != null) {
+					for(let j = cmd.aliases.length - 1; j !== -1; --j) {
+						const alias = cmd.aliases[j];
+						bot.kAliases[alias] = name;
+						if(alias !== bot.kMention) {
+							registerCmd(cmd, alias);
+						}
+					}
+				}
+			};
+
+			// Load the commands from the directory
+			const cmdList = await fs.readdir("commands");
+			for(let i = cmdList.length - 1; i !== -1; --i) {
+				const cmdFile = cmdList[i];
+				try {
+					if(cmdFile.charAt(0) !== "-") {
+						if(cmdFile.endsWith(".js")) {
+							await loadCmd("./commands/" + cmdFile, cmdFile.slice(0, -3));
+						} else if(cmdFile.indexOf(".") === -1) {
+							await loadCmd("./commands/" + cmdFile + "/index.js", cmdFile);
+						}
+					}
+				} catch(ex) {
+					this.err("Can't load command %s:", cmdFile, ex);
+				}
+			}
+
+			// Load the bot mention command
+			await loadCmd("./mention.js", bot.kMention);
+		} catch(ex) {
+			this.err("Can't load commands:", ex);
+		}
+	},
+	findCmd(bot, name) {
+		let obj = bot.kCmds[name];
+		let hide = false;
+		if(obj == null) {
+			obj = bot.kAliases[name];
+			if(obj != null) {
+				obj = bot.kCmds[obj];
+			} else if(name !== bot.kMention && name.endsWith("d")) {
+				name = name.slice(0, -1);
+				obj = bot.kCmds[name];
+				if(obj != null) {
+					hide = true;
+				} else {
+					obj = bot.kAliases[name];
+					if(obj != null) {
+						obj = bot.kCmds[obj];
+						hide = true;
+					} else {
+						return null;
+					}
+				}
+			} else {
+				return null;
+			}
+		}
+		return { name, obj, hide };
 	}
 };

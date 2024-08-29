@@ -23,17 +23,16 @@ import helper from "../helper.js";
 const generateHelp = (bot) => {
 	const help = [ "**Command list**", "" ];
 
-	for(const name in global.botCommands) {
-		const { adminOnly, description, aliases } = global.botCommands[name];
+	for(const name in bot.kCmds) {
+		const { adminOnly, description, aliases } = bot.kCmds[name];
 		if(adminOnly) {
 			continue;
 		}
-		help.push("`" + (name === global.botMention ? "@" + bot.user.username : config.prefix + name) + "` " + (!description ? "No description" : description));
+		help.push("`" + (name === bot.kMention ? "@" + bot.user.username : config.prefix + name) + "` " + (!description ? "No description" : description));
 
-		const l = aliases.length;
-		for(let i = 0; i < l; ++i) {
+		for(let i = aliases.length - 1; i !== -1; --i) {
 			const alias = aliases[i];
-			help.push("`" + (alias === global.botMention ? "@" + bot.user.username : config.prefix + alias) + "` Alias for `" + (name == global.botMention ? "@" + bot.user.username : config.prefix + name) + "`");
+			help.push("`" + config.prefix + alias + "` Alias for `" + (name == bot.kMention ? "@" + bot.user.username : config.prefix + name) + "`");
 		}
 	}
 
@@ -64,14 +63,14 @@ export default {
 		}
 
 		if(channel != null) {
-			channel.createMessage(generateHelp(msg.channel.client));
-			helper.reply(hide, msg, "Command list has been sent! :envelope_with_arrow:");
+			await channel.createMessage(generateHelp(msg.channel.client));
+			await helper.reply(hide, msg, "Command list has been sent! :envelope_with_arrow:");
 		} else {
-			helper.reply(hide, msg, generateHelp(msg.channel.client));
+			await helper.reply(hide, msg, generateHelp(msg.channel.client));
 		}
 	},
-	async runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
-		helper.reply(true, interaction, generateHelp(bot));
+	runSlash(bot, interaction, hide, daemon, wallet, statsInfo) {
+		return helper.reply(hide, interaction, generateHelp(bot));
 	}/*,
 	async runUser(bot, interaction, hide, daemon, wallet, statsInfo) {
 		
