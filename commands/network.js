@@ -1,5 +1,5 @@
 import { getNetworkReport } from "../features.js";
-import { reply } from "./command-utils.js";
+import { reply } from "../command-utils.js";
 
 export default {
 	description: "Shows Morelo network, price, and pool statistics",

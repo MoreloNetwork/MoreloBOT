@@ -1,5 +1,5 @@
 import { sendUserTip } from "../wallet-users.js";
-import { getMentionedUserId, getOption, reply } from "./command-utils.js";
+import { getMentionedUserId, getOption, reply } from "../command-utils.js";
 
 async function makeTip(senderId, recipientId, amount, services) {
 	if(!recipientId) {
@@ -10,7 +10,8 @@ async function makeTip(senderId, recipientId, amount, services) {
 		services.config.walletUsersPath,
 		senderId,
 		recipientId,
-		amount
+		amount,
+		services.config.legacyAddressesPath
 	);
 	return "Tip sent. Transaction: " + hash;
 }
@@ -27,34 +28,25 @@ export default {
 		{
 			name: "amount",
 			description: "Amount of MRL to send",
-			type: 10,
-			required: true,
-			min_value: 0.000000001
+			type: 3,
+			required: true
 		}
 	],
 	async run(message, cmd, args, hide, services) {
-		try {
-			const recipientId = getMentionedUserId(message, args[0]);
-			await message.channel.createMessage(await makeTip(
-				message.author.id,
-				recipientId,
-				args[1],
-				services
-			));
-		} catch(ex) {
-			await message.channel.createMessage(ex.message);
-		}
+		const recipientId = getMentionedUserId(message, args[0]);
+		await message.channel.createMessage(await makeTip(
+			message.author.id,
+			recipientId,
+			args[1],
+			services
+		));
 	},
 	async runSlash(interaction, hide, services) {
-		try {
-			await reply(interaction, await makeTip(
-				interaction.user.id,
-				getOption(interaction, "user"),
-				getOption(interaction, "amount"),
-				services
-			));
-		} catch(ex) {
-			await reply(interaction, ex.message);
-		}
+		await reply(interaction, await makeTip(
+			interaction.user.id,
+			getOption(interaction, "user"),
+			getOption(interaction, "amount"),
+			services
+		));
 	}
 };

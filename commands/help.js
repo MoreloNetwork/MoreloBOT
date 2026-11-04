@@ -17,6 +17,8 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { reply } from "../command-utils.js";
+
 export default {
 	args_min: 0, args_max: 0, hide_msg: false,
 	admin_only: false, where: 0, cooldown: 5,
@@ -26,10 +28,10 @@ export default {
 	description: "Shows bot's usage",
 	aliases: [ "usage", "commands" ],
 	async run(msg, cmd, args, hide) {
-		
+		await msg.channel.createMessage("Available commands: address, balance, difficulty, hashrate, network, ping, pools, tip, uptime");
 	},
 	async runSlash(interaction, hide) {
-		
+		await reply(interaction, "Available commands: address, balance, difficulty, hashrate, network, ping, pools, tip, uptime");
 	}/*,
 	async runUser(interaction, hide) {
 		

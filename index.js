@@ -31,6 +31,7 @@ import fetch from "node-fetch";
 import * as Eris from "eris";
 import config from "./config.js";
 import helper from "./helper.js";
+import { getNetworkReport } from "./features.js";
 
 if(!config.token || !config.tokenAddon) {
 	helper.err("Invalid Discord tokens");
@@ -87,6 +88,7 @@ let daemon, wallet;
 			"--disable-rpc-login",
 			"--wallet-dir", config.walletsPath ? config.walletsPath : "wallets"
 		] : config.walletURL);
+		await wallet.openWallet(config.walletName || "tips", config.walletPassword || "");
 	} catch(ex) {
 		helper.err("Wallet:", ex);
 		process.exit(1);
@@ -115,6 +117,7 @@ const bot = new Eris.Client("Bot " + config.token, {
 		"guilds",
 		"guildMessages",
 		"guildMessageReactions",
+		1 << 15,
 		"directMessages",
 		"directMessageReactions"
 	]
@@ -190,11 +193,16 @@ try {
 }
 
 let statsInfo;
+const commandServices = { daemon, wallet, bot, config };
 bot.once("ready", async () => {
 	helper.log("Discord ready!");
 
 	// Register commands
-	//bot.bulkEditCommands(cmdsReg);
+	try {
+		await bot.bulkEditCommands(cmdsReg);
+	} catch(ex) {
+		helper.err("Commands:", ex);
+	}
 
 	// Update statistics info every 1 minute
 	const updateInfo = async () => {
@@ -209,6 +217,42 @@ bot.once("ready", async () => {
 	};
 	await updateInfo();
 	setInterval(updateInfo, 60000);
+
+	if(config.statsTextChannel) {
+		const channel = bot.getChannel(config.statsTextChannel);
+		if(channel == null) {
+			helper.err("No statistics text channel found with ID " + config.statsTextChannel);
+		} else {
+			let statsMessage;
+			const updateTextStats = async () => {
+				if(statsInfo == null) {
+					return;
+				}
+				try {
+					const report = await getNetworkReport(daemon, config);
+					if(statsMessage == null) {
+						try {
+							const messages = await channel.getMessages(50);
+							statsMessage = messages.find(message =>
+								message.author.id === bot.user.id && message.content?.startsWith("Network statistics")
+							);
+						} catch(ex) {
+							helper.warn("Statistics history:", ex);
+						}
+					}
+					if(statsMessage == null) {
+						statsMessage = await channel.createMessage(report);
+					} else {
+						await channel.editMessage(statsMessage.id, report);
+					}
+				} catch(ex) {
+					helper.err("Statistics message:", ex);
+				}
+			};
+			await updateTextStats();
+			setInterval(updateTextStats, Math.max(60000, Number(config.statsUpdateInterval) || 60000));
+		}
+	}
 
 	if(config.statsChannels != null) {
 		// Update statistics channel names every 2,5 minutes
@@ -307,9 +351,45 @@ bot.once("ready", async () => {
 	helper.err("Discord:", ex);
 }).on("warn", msg => {
 	helper.warn("Discord:", msg);
-}).on("messageCreate", msg => {
-	// TODO parsing
+}).on("messageCreate", async msg => {
+	if(msg.author.bot) {
+		return;
+	}
+
+	let content = msg.content;
+	if(config.prefixMention) {
+		const mention = new RegExp("^<@!?" + bot.user.id + ">\\s*[,]?\\s*").exec(content);
+		if(!mention) {
+			return;
+		}
+		content = content.slice(mention[0].length);
+	} else {
+		const prefix = config.prefix || "";
+		if(!prefix || !content.startsWith(prefix)) {
+			return;
+		}
+		content = content.slice(prefix.length);
+	}
+
+	const [ requestedName, ...args ] = content.trim().split(/\s+/);
+	if(!requestedName) {
+		return;
+	}
+	const commandName = cmds[requestedName] ? requestedName : cmdAliases[requestedName];
+	const cmd = cmds[commandName];
+	if(!cmd?.run) {
+		return;
+	}
+	try {
+		await cmd.run(msg, requestedName, args, false, commandServices);
+	} catch(ex) {
+		helper.err("Command " + requestedName + ":", ex);
+		await msg.channel.createMessage("Command failed; please try again.").catch(replyError => {
+			helper.err("Command response:", replyError);
+		});
+	}
 }).on("interactionCreate", async interaction => {
+	try {
 	if(interaction instanceof Eris.CommandInteraction) {
 		let cmdName = interaction.data.name;
 		let cmd = cmds[cmdName];
@@ -339,18 +419,27 @@ bot.once("ready", async () => {
 
 		if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.USER) {
 			if(cmd.runUser != null) {
-				await cmd.runUser(interaction, hide);
+				await cmd.runUser(interaction, hide, commandServices);
 			}
 		} else if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.MESSAGE) {
 			if(cmd.runMessage != null) {
-				await cmd.runMessage(interaction, hide);
+				await cmd.runMessage(interaction, hide, commandServices);
 			}
 		} else if(cmd.runSlash != null) {
-			await cmd.runSlash(interaction, hide);
+			await cmd.runSlash(interaction, hide, commandServices);
 		}
 	} else if(interaction instanceof Eris.AutocompleteInteraction) {
 		// TODO responding
 	} else if(interaction instanceof Eris.ComponentInteraction) {
 		// TODO
+	}
+	} catch(ex) {
+		helper.err("Interaction:", ex);
+		if(interaction instanceof Eris.CommandInteraction) {
+			await interaction.createMessage({
+				content: "Command failed; please try again.",
+				flags: 64
+			}).catch(replyError => helper.err("Interaction response:", replyError));
+		}
 	}
 }).connect();

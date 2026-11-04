@@ -3,7 +3,11 @@ import fetch from "node-fetch";
 const atomicUnits = 1000000000n;
 
 export function formatHashrate(difficulty) {
-	let hashrate = Number(difficulty) / 120;
+	return formatHashrateValue(Number(difficulty) / 120);
+}
+
+export function formatHashrateValue(value) {
+	let hashrate = Number(value);
 	let unit = "H/s";
 	for(const nextUnit of [ "kH/s", "MH/s", "GH/s", "TH/s" ]) {
 		if(hashrate < 1000) {
@@ -15,8 +19,21 @@ export function formatHashrate(difficulty) {
 	return hashrate.toFixed(2) + " " + unit;
 }
 
+function preventMentions(text) {
+	return text.replace(/@(everyone|here)/gi, "@\u200b$1");
+}
+
 function formatMRL(amount, digits = 2) {
-	return (Number(amount) / Number(atomicUnits)).toFixed(digits) + " MRL";
+	let value = BigInt(amount);
+	const negative = value < 0n;
+	if(negative) {
+		value = -value;
+	}
+	const scale = 10n ** BigInt(digits);
+	const rounded = (value * scale + atomicUnits / 2n) / atomicUnits;
+	const whole = rounded / scale;
+	const fraction = String(rounded % scale).padStart(digits, "0");
+	return (negative ? "-" : "") + whole + (digits ? "." + fraction : "") + " MRL";
 }
 
 async function getJson(url, source) {
@@ -95,40 +112,42 @@ export async function getPools(config) {
 		throw new Error("MiningPoolStats returned an invalid pool list");
 	}
 	return body.data
-		.filter(pool => pool && typeof pool.url === "string" && Number.isFinite(Number(pool.hashrate)))
+		.filter(pool => pool && typeof pool.url === "string" && Number.isFinite(Number(pool.hashrate)) && Number(pool.hashrate) >= 0)
 		.sort((left, right) => Number(right.hashrate) - Number(left.hashrate));
 }
 
 export async function getNetworkReport(daemon, config) {
 	const network = await getNetworkStats(daemon);
+	const [ emission, price, pools ] = await Promise.all([
+		getEmission(config).catch(ex => "unavailable (" + ex.message + ")"),
+		getPrice(config).catch(ex => [ "Price data unavailable (" + ex.message + ")" ]),
+		getPools(config).catch(ex => ({ error: ex.message }))
+	]);
 	const report = [
 		"Network statistics",
 		"Hashrate: " + network.hashrate,
 		"Height: " + network.height,
 		"Difficulty: " + network.difficulty,
-		"Emission: " + (await getEmission(config) ?? "unavailable"),
+		"Emission: " + (emission ?? "unavailable"),
 		"Block reward: " + network.blockReward,
 		"Pending transactions: " + network.pendingTransactions,
 		"Block hash: " + network.blockHash.slice(0, 10) + "..."
 	];
 
-	const [ price, pools ] = await Promise.all([
-		getPrice(config).catch(ex => {
-			throw new Error("Price data: " + ex.message);
-		}),
-		getPools(config).catch(ex => {
-			throw new Error("Pool data: " + ex.message);
-		})
-	]);
 	if(price) {
 		report.push("", "Morelo price", ...price);
 	}
 	if(pools) {
-		report.push("", "Mining pools", ...pools.slice(0, 5).map(pool =>
-			pool.url + " (Hashrate: " + formatHashrate(pool.hashrate * 120) + ")"
-		));
+		report.push("", "Mining pools");
+		if(Array.isArray(pools)) {
+			report.push(...pools.slice(0, 5).map(pool =>
+				pool.url + " (Hashrate: " + formatHashrateValue(pool.hashrate) + ")"
+			));
+		} else {
+			report.push("Pool data unavailable (" + pools.error + ")");
+		}
 	}
-	return report.join("\n").slice(0, 1900);
+	return preventMentions(report.join("\n")).slice(0, 1900);
 }
 
 export function formatMRLAmount(amount) {

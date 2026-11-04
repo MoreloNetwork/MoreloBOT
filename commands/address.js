@@ -1,8 +1,13 @@
 import { getUserAccount } from "../wallet-users.js";
-import { getOption, reply } from "./command-utils.js";
+import { reply } from "../command-utils.js";
 
 async function getAddress(userId, services) {
-	const account = await getUserAccount(services.wallet, services.config.walletUsersPath, userId);
+	const account = await getUserAccount(
+		services.wallet,
+		services.config.walletUsersPath,
+		userId,
+		services.config.legacyAddressesPath
+	);
 	return services.wallet.getAddress(account, 0);
 }
 

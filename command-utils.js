@@ -12,7 +12,7 @@ export function getMentionedUserId(message, value) {
 
 export async function reply(target, content) {
 	if(target.createMessage) {
-		return target.createMessage({ content, flags: 64 });
+		return target.createMessage({ content, flags: 64, allowedMentions: { parse: [] } });
 	}
 	return target.channel.createMessage(content);
 }

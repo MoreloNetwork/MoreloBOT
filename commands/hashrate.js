@@ -1,5 +1,5 @@
 import { getNetworkStats } from "../features.js";
-import { reply } from "./command-utils.js";
+import { reply } from "../command-utils.js";
 
 export default {
 	description: "Shows the current Morelo network hashrate",

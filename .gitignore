@@ -8,3 +8,6 @@ config.js
 
 # Morelo binaries
 morelo*
+
+# Wallet account mapping
+wallets/users.json

@@ -1,9 +1,14 @@
 import { formatWalletBalance, getUserBalance } from "../wallet-users.js";
-import { getMentionedUserId, getOption, reply } from "./command-utils.js";
+import { getMentionedUserId, getOption, reply } from "../command-utils.js";
 
 async function getBalance(userId, services) {
-	const balance = await getUserBalance(services.wallet, services.config.walletUsersPath, userId);
-	return "Balance for <@" + userId + ">:\n"
+	const balance = await getUserBalance(
+		services.wallet,
+		services.config.walletUsersPath,
+		userId,
+		services.config.legacyAddressesPath
+	);
+	return "Balance for user " + userId + ":\n"
 		+ "Unlocked: " + formatWalletBalance(balance.unlockedBalance) + "\n"
 		+ "Locked: " + formatWalletBalance(balance.balance - balance.unlockedBalance);
 }

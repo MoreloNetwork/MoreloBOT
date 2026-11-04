@@ -17,6 +17,8 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { reply } from "../command-utils.js";
+
 export default {
 	args_min: 0, args_max: 0, hide_msg: false,
 	admin_only: false, where: 0, cooldown: 5,
@@ -25,9 +27,9 @@ export default {
 	notes: "",
 	description: "Shows bot's uptime",
 	async run(msg, cmd, args, hide) {
-		//
+		await msg.channel.createMessage("Uptime: " + Math.floor(process.uptime()) + " seconds");
 	},
 	async runSlash(interaction, hide) {
-		//
+		await reply(interaction, "Uptime: " + Math.floor(process.uptime()) + " seconds");
 	}
 };

@@ -17,6 +17,8 @@
  * along with MoreloBOT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { reply } from "../command-utils.js";
+
 export default {
 	args_min: 0, args_max: 0, hide_msg: false,
 	admin_only: false, where: 0, cooldown: 5,
@@ -25,10 +27,10 @@ export default {
 	notes: "",
 	description: "Shows bot's ping",
 	aliases: [ "pong" ],
-	async run(msg, cmd, args, hide) {
-		
+	async run(msg, cmd, args, hide, services) {
+		await msg.channel.createMessage("Pong! " + (msg.channel.guild?.shard?.latency ?? services.bot.shards.get(0)?.latency ?? "unknown") + " ms");
 	},
 	async runSlash(interaction, hide) {
-		
+		await reply(interaction, "Pong!");
 	}
 };

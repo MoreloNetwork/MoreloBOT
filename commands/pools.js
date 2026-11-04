@@ -1,12 +1,13 @@
-import { formatHashrate, getPools } from "../features.js";
-import { reply } from "./command-utils.js";
+import { formatHashrateValue, getPools } from "../features.js";
+import { reply } from "../command-utils.js";
 
 function formatPools(pools) {
 	if(!pools?.length) {
 		return "No mining pool data is available.";
 	}
 	return pools.slice(0, 15).map(pool =>
-		pool.url + " (Hashrate: " + formatHashrate(pool.hashrate * 120) + ")"
+		pool.url.replace(/@(everyone|here)/gi, "@\u200b$1")
+			+ " (Hashrate: " + formatHashrateValue(pool.hashrate) + ")"
 	).join("\n").slice(0, 1900);
 }
 
