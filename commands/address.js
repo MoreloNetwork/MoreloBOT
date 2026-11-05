@@ -12,6 +12,8 @@ async function getAddress(userId, services) {
 }
 
 export default {
+	args_min: 0, args_max: 0, hide_msg: false,
+	admin_only: false, where: 0, cooldown: 10,
 	description: "Gets your Morelo tip wallet address",
 	options: [],
 	async run(message, cmd, args, hide, services) {

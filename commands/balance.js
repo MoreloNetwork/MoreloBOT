@@ -14,6 +14,8 @@ async function getBalance(userId, services) {
 }
 
 export default {
+	args_min: 0, args_max: 1, hide_msg: false,
+	admin_only: false, where: 0, cooldown: 10,
 	description: "Shows your or another user's Morelo tip wallet balance",
 	options: [ {
 		name: "user",

@@ -24,8 +24,10 @@ belong to the configured wallet.
   `pools`, `address`, `balance`, and `tip`.
 - `help`, `ping`, and `uptime` utility commands.
 
-Slash commands are registered at startup. By default, message commands use a
-mention prefix; set `prefixMention` to `false` to use the configured `prefix`.
+Slash commands are registered at startup. Message commands accept the configured
+`prefix` and can also be invoked by mentioning the bot. Set `prefixMention` to
+`false` to make mentions show the command-list greeting instead of running the
+following command.
 Enable Discord's Message Content intent for message commands in the Developer Portal.
 Configure `statsTextChannel` to post and periodically update a combined statistics
 message. Individual network statistics channels can be configured through
