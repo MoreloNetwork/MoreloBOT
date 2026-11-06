@@ -71,7 +71,8 @@ function saveUsers(filePath) {
 }
 
 export async function getUserAccount(wallet, filePath, userId, legacyAddressesPath = "addresses.json") {
-	const records = await loadUsers(filePath || "wallets/users.json", wallet, legacyAddressesPath);
+	filePath ||= "wallets/users.json";
+	const records = await loadUsers(filePath, wallet, legacyAddressesPath);
 	const key = String(userId);
 	if(Number.isInteger(records[key]) && records[key] >= 0) {
 		return records[key];
