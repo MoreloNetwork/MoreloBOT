@@ -3,8 +3,11 @@ npm-debug.log
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
-
+screenlog.0
 config.js
 
 # Morelo binaries
 morelo*
+
+# Wallet account mapping
+wallets/users.json

@@ -18,56 +18,81 @@
  */
 
 process.env.TZ = "UTC";
-
 process.title = "MoreloBOT";
 
-process.on("unhandledRejection", (ex, promise) => {
-	helper.err("Unhandled rejection:", ex);
-});
-
-import fs from "node:fs/promises";
 import monero from "monero-ts";
 import fetch from "node-fetch";
 import * as Eris from "eris";
 import config from "./config.js";
 import helper from "./helper.js";
+import { getEmission, getNetworkReport, getNetworkStats, formatHashrateValue } from "./features.js";
+import mentionCommand from "./mention.js";
+import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
+
+let daemon, wallet, bot, botAddon;
+let ownsWalletRpcProcess = false;
+let walletRpcProcess;
+let shutdownPromise;
+
+async function shutdown(reason, exitCode = 0) {
+	if(shutdownPromise) {
+		return shutdownPromise;
+	}
+	shutdownPromise = (async () => {
+		helper.log("Shutting down (%s)", reason);
+		try {
+			bot?.disconnect({ reconnect: false });
+			botAddon?.disconnect({ reconnect: false });
+		} catch(ex) {
+			helper.err("Can't disconnect Discord clients:", ex);
+			exitCode ||= 1;
+		}
+		try {
+			await stopOwnedWalletRpc(wallet, ownsWalletRpcProcess, walletRpcProcess);
+		} catch(ex) {
+			helper.err("Can't stop wallet RPC:", ex);
+			exitCode ||= 1;
+		}
+		process.exit(exitCode);
+	})();
+	return shutdownPromise;
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT", 130));
+process.on("SIGTERM", () => void shutdown("SIGTERM", 143));
+process.on("uncaughtException", ex => {
+	helper.err("Uncaught exception:", ex);
+	void shutdown("uncaught exception", 1);
+});
+process.on("unhandledRejection", ex => {
+	helper.err("Unhandled rejection:", ex);
+	void shutdown("unhandled rejection", 1);
+});
+process.on("exit", () => {
+	const child = ownsWalletRpcProcess && walletRpcProcess;
+	if(child && !child.killed) {
+		child.kill();
+	}
+});
 
 if(!config.token || !config.tokenAddon) {
 	helper.err("Invalid Discord tokens");
 	process.exit(1);
 }
 
-let daemon, wallet;
 {
-	let pathSep, execExt;
-	if(process.platform === "win32") {
-		pathSep = "\\";
-		execExt = ".exe";
-	} else {
-		pathSep = "/";
-		execExt = "";
-	}
-
-	let binPath = "";
-	if(config.binariesPath) {
-		binPath = config.binariesPath;
-
-		// Add a trailing slash if there isn't one
-		const sep = binPath.slice(-1);
-		if(sep !== "/" && sep !== "\\") {
-			binPath += pathSep;
-		}
+	const pathSep = process.platform === "win32" ? "\\" : "/";
+	const execExt = process.platform === "win32" ? ".exe" : "";
+	let binPath = config.binariesPath || "";
+	if(binPath && !binPath.endsWith("/") && !binPath.endsWith("\\")) {
+		binPath += pathSep;
 	}
 
 	helper.log(config.daemonURL ? "Connecting to daemon..." : "Running daemon...");
-
 	try {
-		daemon = await monero.connectToDaemonRpc(!config.daemonURL ? [
-			binPath + "morelod" + execExt
-		] : config.daemonURL);
-
+		daemon = await monero.connectToDaemonRpc(config.daemonURL || [ binPath + "morelod" + execExt ]);
 		const info = await daemon.getInfo();
-		if(info.getHeight() === info.getTargetHeight()) {
+		if(info.getTargetHeight() === 0 || info.getHeight() >= info.getTargetHeight()) {
 			helper.log("Daemon synced");
 		} else {
 			helper.log("Daemon not synced, height: %i, target: %i", info.getHeight(), info.getTargetHeight());
@@ -77,165 +102,248 @@ let daemon, wallet;
 		process.exit(1);
 	}
 
-	helper.log(config.walletURL ? "Connecting to wallet..." : "Running wallet...");
-
+	helper.log(config.walletURL ? "Connecting to wallet..." : "Checking local wallet RPC...");
 	try {
-		wallet = await monero.connectToWalletRpc(!config.walletURL ? [
-			binPath + "morelo-wallet-rpc" + execExt,
-			"--daemon-address", config.daemonURL ? config.daemonURL : "http://localhost:38302",
-			"--rpc-bind-port", "38304",
-			"--disable-rpc-login",
-			"--wallet-dir", config.walletsPath ? config.walletsPath : "wallets"
-		] : config.walletURL);
+		const connection = await connectWalletRpc(monero, config, binPath, execExt, child => {
+			walletRpcProcess = child;
+			ownsWalletRpcProcess = true;
+		});
+		wallet = connection.wallet;
+		ownsWalletRpcProcess = connection.ownsProcess;
+		walletRpcProcess = connection.process;
 	} catch(ex) {
 		helper.err("Wallet:", ex);
-		process.exit(1);
+		await shutdown("wallet startup failed", 1);
 	}
 }
 
-helper.log("Connecting to Discord...");
-
-const bot = new Eris.Client("Bot " + config.token, {
-	//getAllUsers: true,
-	//restMode: true,
+bot = new Eris.Client("Bot " + config.token, {
 	disableEvents: {
-		"CHANNEL_DELETE": true,
 		"CHANNEL_BAN_ADD": true,
 		"CHANNEL_BAN_REMOVE": true,
-		"GUILD_DELETE": true,
-		"GUILD_ROLE_CREATE": true,
-		"GUILD_ROLE_DELETE": true,
-		"GUILD_ROLE_UPDATE": true,
-		"PRESENCE_UPDATE": true,
 		"TYPING_START": true,
-		"USER_UPDATE": true,
 		"VOICE_STATE_UPDATE": true
 	},
 	intents: [
 		"guilds",
+		"guildMembers",
+		"guildPresences",
 		"guildMessages",
 		"guildMessageReactions",
+		1 << 15,
 		"directMessages",
 		"directMessageReactions"
 	]
 });
-
 bot.editStatus("online", [ {
 	name: "Hello!",
 	type: Eris.Constants.ActivityTypes.WATCHING
 } ]);
 
-// It's not meant to be connected to the gateway so no options provided
-const botAddon = new Eris.Client("Bot " + config.tokenAddon);
+botAddon = new Eris.Client("Bot " + config.tokenAddon);
 botAddon.on("error", ex => {
 	helper.err("Discord Addon:", ex);
 }).on("warn", msg => {
 	helper.warn("Discord Addon:", msg);
 });
 
-// Load commands and construct their registration data
 const cmds = {};
 const cmdsReg = [];
 const cmdAliases = {};
 try {
 	const cmdList = await fs.readdir("commands");
-	for(let i = cmdList.length - 1; i !== -1; --i) {
-		const cmdFile = cmdList[i];
-		if(cmdFile.endsWith(".js")) {
-			const cmdName = cmdFile.slice(0, -3);
-			try {
-				const cmd = (await import("./commands/" + cmdFile)).default;
-				cmds[cmdName] = cmd;
-
-				// Register the command and then its aliases
-				let alias = cmdName;
-				let j = (cmd.aliases != null && cmd.aliases.length != null ? cmd.aliases.length : 0);
-				do {
+	for(const cmdFile of cmdList) {
+		if(!cmdFile.endsWith(".js")) {
+			continue;
+		}
+		const cmdName = cmdFile.slice(0, -3);
+		try {
+			const cmd = (await import("./commands/" + cmdFile)).default;
+			cmds[cmdName] = cmd;
+			const aliases = [ cmdName, ...(cmd.aliases || []) ];
+			for(const alias of aliases) {
+				if(alias !== cmdName) {
+					cmdAliases[alias] = cmdName;
+				}
+				for(const hidden of [ false, true ]) {
+					const commandName = alias + (hidden ? "d" : "");
 					if(cmd.runSlash) {
 						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
-							options: cmd.options
+							name: commandName,
+							description: cmd.description + (hidden ? " (response hidden)" : ""),
+							options: cmd.options || []
 						});
 					}
 					if(cmd.runUser) {
 						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
+							name: commandName,
+							description: cmd.description + (hidden ? " (response hidden)" : ""),
 							type: Eris.Constants.ApplicationCommandTypes.USER
 						});
 					}
 					if(cmd.runMessage) {
 						cmdsReg.push({
-							name: alias,
-							description: cmd.description,
+							name: commandName,
+							description: cmd.description + (hidden ? " (response hidden)" : ""),
 							type: Eris.Constants.ApplicationCommandTypes.MESSAGE
 						});
 					}
-
-					if(--j === -1) {
-						break;
-					}
-
-					alias = cmd.aliases[j];
-					cmdAliases[alias] = cmdName;
-				} while(true);
-			} catch(ex) {
-				helper.err("Command:", ex);
+				}
 			}
+		} catch(ex) {
+			helper.err("Command:", ex);
 		}
 	}
 } catch(ex) {
 	helper.err("Commands:", ex);
 }
-
+const commandServices = { daemon, wallet, bot, config, commands: cmds };
+const cooldowns = new Map();
+let mention;
 let statsInfo;
+
+function findCommand(name) {
+	let hide = false;
+	let command = cmds[name];
+	if(!command) {
+		if(name.endsWith("d")) {
+			hide = true;
+			name = name.slice(0, -1);
+		}
+		command = cmds[name] || cmds[cmdAliases[name]];
+	}
+	return command ? { name, command, hide } : null;
+}
+
+function isOnCooldown(userId, commandName, command) {
+	const key = userId + ":" + commandName;
+	const now = Date.now();
+	const expiry = cooldowns.get(key) || 0;
+	if(expiry > now) {
+		return (expiry - now) / 1000;
+	}
+	cooldowns.set(key, now + Math.max(0, Number(command.cooldown) || 0) * 1000);
+	return 0;
+}
+
+async function runMessageCommand(message, commandName, args, hide = false) {
+	const found = findCommand(commandName);
+	if(!found || typeof found.command.run !== "function") {
+		return;
+	}
+	const command = found.command;
+	hide ||= found.hide;
+	const argsMin = command.args_min ?? command.argsMin ?? 0;
+	const argsMax = command.args_max ?? command.argsMax ?? -1;
+	if(args.length < argsMin || (argsMax !== -1 && args.length > argsMax)) {
+		await helper.reply(hide, message, "Invalid command arguments.", undefined, bot);
+		return;
+	}
+	if((command.where === 1 && !message.guildID) || (command.where === 2 && message.guildID)) {
+		await helper.reply(hide, message, command.where === 1
+			? "This command can only be used in a server."
+			: "This command can only be used in direct messages.", undefined, bot);
+		return;
+	}
+	if((hide || command.hide_msg || command.hideMsg) && helper.isDeletable(message, bot)) {
+		message.delete().catch(ex => helper.err("Can't delete command message:", ex));
+	}
+	const remaining = isOnCooldown(message.author.id, found.name, command);
+	if(remaining) {
+		await helper.reply(hide, message, "Please wait " + helper.formatTime(remaining * 1000) + " before using this command again.", undefined, bot);
+		return;
+	}
+	try {
+		const result = await command.run(message, found.name, args, hide, commandServices);
+		if(typeof result === "string") {
+			await helper.reply(hide, message, result, undefined, bot);
+		}
+	} catch(ex) {
+		helper.err("Command " + found.name + ":", ex);
+		await helper.reply(hide, message, "Command failed; please try again.", undefined, bot).catch(replyError => {
+			helper.err("Command response:", replyError);
+		});
+	}
+}
+
 bot.once("ready", async () => {
 	helper.log("Discord ready!");
+	mention = new RegExp("^<@!?" + bot.user.id + ">(?:\\s|$)");
+	try {
+		await bot.bulkEditCommands(cmdsReg);
+	} catch(ex) {
+		helper.err("Commands:", ex);
+	}
 
-	// Register commands
-	//bot.bulkEditCommands(cmdsReg);
-
-	// Update statistics info every 1 minute
 	const updateInfo = async () => {
 		try {
 			const info = await daemon.getInfo();
-			if(info.getHeight() === info.getTargetHeight()) {
+			if(info.getTargetHeight() === 0 || info.getHeight() >= info.getTargetHeight()) {
 				statsInfo = info;
 			}
 		} catch(ex) {
-			helper.err("Daemon:", ex);
+			helper.err("Daemon getInfo:", ex);
 		}
 	};
 	await updateInfo();
 	setInterval(updateInfo, 60000);
 
-	if(config.statsChannels != null) {
-		// Update statistics channel names every 2,5 minutes
+	if(config.statsTextChannel) {
+		const channel = bot.getChannel(config.statsTextChannel);
+		if(!channel) {
+			helper.err("No statistics text channel found with ID " + config.statsTextChannel);
+		} else {
+			let statsMessage;
+			const updateTextStats = async () => {
+				if(!statsInfo) {
+					return;
+				}
+				try {
+					const report = await getNetworkReport(daemon, config);
+					if(!statsMessage) {
+						try {
+							const messages = await bot.getMessages(channel.id, { limit: 50 });
+							statsMessage = messages.find(message =>
+								message.author.id === bot.user.id && message.content?.startsWith("Network statistics")
+							);
+						} catch(ex) {
+							helper.warn("Statistics history:", ex);
+						}
+					}
+					statsMessage = statsMessage
+						? await bot.editMessage(channel.id, statsMessage.id, report)
+						: await bot.createMessage(channel.id, report);
+				} catch(ex) {
+					helper.err("Statistics message:", ex);
+				}
+			};
+			await updateTextStats();
+			setInterval(updateTextStats, Math.max(60000, Number(config.statsUpdateInterval) || 60000));
+		}
+	}
+
+	if(config.statsChannels) {
 		const updateStat = (id, updateFunc) => {
 			if(!config.statsChannels[id]) {
-				helper.err("Invalid channel ID for " + id);
 				return;
 			}
 			const channel = bot.getChannel(config.statsChannels[id]);
-			if(channel == null) {
+			if(!channel) {
 				helper.err("No channel found with ID " + config.statsChannels[id]);
 				return;
 			}
-
 			let useAddon = false;
 			const timer = async () => {
-				if(statsInfo != null) {
+				if(statsInfo) {
 					try {
 						const name = await updateFunc();
 						if(name) {
 							if(useAddon) {
-								useAddon = false;
 								await botAddon.editChannel(channel.id, { name });
 							} else {
-								useAddon = true;
-								await channel.edit({ name });
+								await bot.editChannel(channel.id, { name });
 							}
+							useAddon = !useAddon;
 						}
 					} catch(ex) {
 						helper.err("Statistics:", ex);
@@ -246,111 +354,95 @@ bot.once("ready", async () => {
 			timer();
 		};
 
-		updateStat("hashrate", async () => {
-			// Some of the numbers below are shifted by 2 decimal places
-			// so that there is no need for multiplication when rounding
-			let type, num = Number(statsInfo.getDifficulty()) / 1.2;
-			if(num < 100000) {
-				type = " H/s";
-			} else if(num < 100000000) {
-				num /= 1000;
-				type = " kH/s";
-			} else if(num < 100000000000) {
-				num /= 1000000;
-				type = " MH/s";
-			} else if(num < 100000000000000) {
-				num /= 1000000000;
-				type = " GH/s";
-			}
-			return "Hashrate: " + (Math.round(num) / 100) + type;
-		});
-		updateStat("height", async () => {
-			return "Height: " + statsInfo.getHeight();
-		});
+		updateStat("hashrate", async () => "Hashrate: " + formatHashrateValue(Number(statsInfo.getDifficulty()) / 120));
+		updateStat("height", async () => "Height: " + statsInfo.getHeight());
 		updateStat("emission", async () => {
-			if(config.explorerURL) {
-				const resp = await fetch(config.explorerURL + "/api/emission");
-				if(resp.ok) {
-					const body = await resp.json();
-					if(body.status === "success") {
-						// Some of the numbers below are shifted by 2 decimal places
-						// so that there is no need for multiplication when rounding
-						let type, num = body.data.coinbase / 10000000;
-						if(num < 100000) {
-							type = " MRL";
-						} else if(num < 100000000) {
-							num /= 1000;
-							type = "k MRL";
-						} else if(num < 100000000000) {
-							num /= 1000000;
-							type = "M MRL";
-						}
-						return "Emission: " + (Math.round(num) / 100) + type;
-					} else {
-						throw body;
-					}
-				} else {
-					throw resp.status;
-				}
+			const emission = await getEmission(config);
+			return emission ? "Emission: " + emission : null;
+		});
+		updateStat("lastReward", async () => "Last reward: " + (await getNetworkStats(daemon)).blockReward);
+		updateStat("difficulty", async () => "Difficulty: " + statsInfo.getDifficulty());
+		updateStat("xeggexUSDT", async () => {
+			const response = await fetch("https://api.xeggex.com/api/v2/market/getbysymbol/MRL_USDT");
+			if(!response.ok) {
+				throw new Error("Xeggex returned HTTP " + response.status);
 			}
+			const body = await response.json();
+			return body.lastPrice ? "MRL/USDT: " + body.lastPrice : null;
 		});
-		updateStat("lastReward", async () => {
-			const block = await daemon.getBlockByHash(statsInfo.topBlockHash);
-			// Divide before but also after converting from BigInt to not lose precision when rounding
-			return "Last reward: " + (Math.round(Number(block.minerTx.outputs[0].amount / 1000000n) / 10) / 100) + " MRL";
-		});
-		updateStat("difficulty", async () => {
-			return "Difficulty: " + statsInfo.getDifficulty();
+		updateStat("xeggexDOGE", async () => {
+			const response = await fetch("https://api.xeggex.com/api/v2/market/getbysymbol/MRL_DOGE");
+			if(!response.ok) {
+				throw new Error("Xeggex returned HTTP " + response.status);
+			}
+			const body = await response.json();
+			return body.lastPrice ? "MRL/DOGE: " + body.lastPrice : null;
 		});
 	}
 }).on("error", ex => {
 	helper.err("Discord:", ex);
 }).on("warn", msg => {
 	helper.warn("Discord:", msg);
-}).on("messageCreate", msg => {
-	// TODO parsing
+}).on("messageCreate", async message => {
+	if(message.author.bot) {
+		return;
+	}
+	const content = message.content || "";
+	const matchedMention = mention?.exec(content);
+	if(matchedMention) {
+		const remainder = content.slice(matchedMention[0].length).trim();
+		if(!remainder || !config.prefixMention) {
+			await mentionCommand.run(message, null, [], false, commandServices);
+			return;
+		}
+		const [ commandName, ...args ] = remainder.split(/\s+/);
+		await runMessageCommand(message, commandName.toLowerCase(), args);
+		return;
+	}
+	const prefix = config.prefix || "";
+	if(!prefix || !content.toLowerCase().startsWith(prefix.toLowerCase())) {
+		return;
+	}
+	const [ commandName, ...args ] = content.slice(prefix.length).trim().split(/\s+/);
+	if(commandName) {
+		await runMessageCommand(message, commandName.toLowerCase(), args);
+	}
 }).on("interactionCreate", async interaction => {
-	if(interaction instanceof Eris.CommandInteraction) {
-		let cmdName = interaction.data.name;
-		let cmd = cmds[cmdName];
-		let hide = false;
-		if(cmd == null) {
-			cmd = cmdAliases[cmdName];
-			if(cmd != null) {
-				cmd = cmds[cmd];
-			} else if(cmdName.endsWith("d")) {
-				cmdName = cmdName.slice(0, -1);
-				cmd = cmds[cmdName];
-				if(cmd != null) {
-					hide = true;
-				} else {
-					cmd = cmdAliases[cmdName];
-					if(cmd != null) {
-						cmd = cmds[cmd];
-						hide = true;
-					} else {
-						return;
-					}
-				}
-			} else {
-				return;
-			}
+	if(!(interaction instanceof Eris.CommandInteraction)) {
+		return;
+	}
+	const found = findCommand(interaction.data.name);
+	if(!found || typeof found.command.runSlash !== "function") {
+		return;
+	}
+	const command = found.command;
+	if((command.where === 1 && !interaction.guildID) || (command.where === 2 && interaction.guildID)) {
+		await interaction.createMessage({
+			content: command.where === 1
+				? "This command can only be used in a server."
+				: "This command can only be used in direct messages.",
+			flags: 64
+		});
+		return;
+	}
+	const userId = interaction.member?.id || interaction.user?.id;
+	const remaining = isOnCooldown(userId, found.name, command);
+	try {
+		if(remaining) {
+			await interaction.createMessage({
+				content: "Please wait " + helper.formatTime(remaining * 1000) + " before using this command again.",
+				flags: 64
+			});
+			return;
 		}
-
-		if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.USER) {
-			if(cmd.runUser != null) {
-				await cmd.runUser(interaction, hide);
-			}
-		} else if(interaction.data.type === Eris.Constants.ApplicationCommandTypes.MESSAGE) {
-			if(cmd.runMessage != null) {
-				await cmd.runMessage(interaction, hide);
-			}
-		} else if(cmd.runSlash != null) {
-			await cmd.runSlash(interaction, hide);
+		await command.runSlash(interaction, found.hide, commandServices);
+	} catch(ex) {
+		helper.err("Interaction:", ex);
+		if(!interaction.acknowledged) {
+			await interaction.createMessage({
+				content: "Command failed; please try again.",
+				flags: 64
+			}).catch(replyError => helper.err("Interaction response:", replyError));
 		}
-	} else if(interaction instanceof Eris.AutocompleteInteraction) {
-		// TODO responding
-	} else if(interaction instanceof Eris.ComponentInteraction) {
-		// TODO
 	}
 }).connect();
