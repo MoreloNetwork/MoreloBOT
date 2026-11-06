@@ -110,10 +110,13 @@ export function parseMRLAmount(value) {
 
 export async function getUserBalance(wallet, filePath, userId, legacyAddressesPath) {
 	const accountIndex = await getUserAccount(wallet, filePath, userId, legacyAddressesPath);
-	const account = await wallet.getAccount(accountIndex);
-	const balance = account.getBalance();
-	const unlockedBalance = account.getUnlockedBalance();
-	return { accountIndex, balance, unlockedBalance };
+	const subaddress = await wallet.getSubaddress(accountIndex, 0);
+	return {
+		accountIndex,
+		balance: subaddress.getBalance(),
+		unlockedBalance: subaddress.getUnlockedBalance(),
+		numBlocksToUnlock: subaddress.getNumBlocksToUnlock()
+	};
 }
 
 export async function sendUserTip(wallet, filePath, senderId, recipientId, amount, legacyAddressesPath) {

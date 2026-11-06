@@ -20,11 +20,6 @@
 process.env.TZ = "UTC";
 process.title = "MoreloBOT";
 
-process.on("unhandledRejection", (ex, promise) => {
-	helper.err("Unhandled rejection:", ex);
-});
-
-import fs from "node:fs/promises";
 import monero from "monero-ts";
 import fetch from "node-fetch";
 import * as Eris from "eris";
@@ -32,13 +27,59 @@ import config from "./config.js";
 import helper from "./helper.js";
 import { getEmission, getNetworkReport, getNetworkStats, formatHashrateValue } from "./features.js";
 import mentionCommand from "./mention.js";
+import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
+
+let daemon, wallet, bot, botAddon;
+let ownsWalletRpcProcess = false;
+let walletRpcProcess;
+let shutdownPromise;
+
+async function shutdown(reason, exitCode = 0) {
+	if(shutdownPromise) {
+		return shutdownPromise;
+	}
+	shutdownPromise = (async () => {
+		helper.log("Shutting down (%s)", reason);
+		try {
+			bot?.disconnect({ reconnect: false });
+			botAddon?.disconnect({ reconnect: false });
+		} catch(ex) {
+			helper.err("Can't disconnect Discord clients:", ex);
+			exitCode ||= 1;
+		}
+		try {
+			await stopOwnedWalletRpc(wallet, ownsWalletRpcProcess, walletRpcProcess);
+		} catch(ex) {
+			helper.err("Can't stop wallet RPC:", ex);
+			exitCode ||= 1;
+		}
+		process.exit(exitCode);
+	})();
+	return shutdownPromise;
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT", 130));
+process.on("SIGTERM", () => void shutdown("SIGTERM", 143));
+process.on("uncaughtException", ex => {
+	helper.err("Uncaught exception:", ex);
+	void shutdown("uncaught exception", 1);
+});
+process.on("unhandledRejection", ex => {
+	helper.err("Unhandled rejection:", ex);
+	void shutdown("unhandled rejection", 1);
+});
+process.on("exit", () => {
+	const child = ownsWalletRpcProcess && walletRpcProcess;
+	if(child && !child.killed) {
+		child.kill();
+	}
+});
 
 if(!config.token || !config.tokenAddon) {
 	helper.err("Invalid Discord tokens");
 	process.exit(1);
 }
 
-let daemon, wallet;
 {
 	const pathSep = process.platform === "win32" ? "\\" : "/";
 	const execExt = process.platform === "win32" ? ".exe" : "";
@@ -61,23 +102,22 @@ let daemon, wallet;
 		process.exit(1);
 	}
 
-	helper.log(config.walletURL ? "Connecting to wallet..." : "Running wallet...");
+	helper.log(config.walletURL ? "Connecting to wallet..." : "Checking local wallet RPC...");
 	try {
-		wallet = await monero.connectToWalletRpc(config.walletURL || [
-			binPath + "morelo-wallet-rpc" + execExt,
-			"--daemon-address", config.daemonURL || "http://localhost:38302",
-			"--rpc-bind-port", "38304",
-			"--disable-rpc-login",
-			"--wallet-dir", config.walletsPath || "wallets"
-		]);
-		await wallet.openWallet(config.walletName || "tips", config.walletPassword || "");
+		const connection = await connectWalletRpc(monero, config, binPath, execExt, child => {
+			walletRpcProcess = child;
+			ownsWalletRpcProcess = true;
+		});
+		wallet = connection.wallet;
+		ownsWalletRpcProcess = connection.ownsProcess;
+		walletRpcProcess = connection.process;
 	} catch(ex) {
 		helper.err("Wallet:", ex);
-		process.exit(1);
+		await shutdown("wallet startup failed", 1);
 	}
 }
 
-const bot = new Eris.Client("Bot " + config.token, {
+bot = new Eris.Client("Bot " + config.token, {
 	disableEvents: {
 		"CHANNEL_BAN_ADD": true,
 		"CHANNEL_BAN_REMOVE": true,
@@ -99,7 +139,7 @@ bot.editStatus("online", [ {
 	type: Eris.Constants.ActivityTypes.WATCHING
 } ]);
 
-const botAddon = new Eris.Client("Bot " + config.tokenAddon);
+botAddon = new Eris.Client("Bot " + config.tokenAddon);
 botAddon.on("error", ex => {
 	helper.err("Discord Addon:", ex);
 }).on("warn", msg => {

@@ -11,9 +11,15 @@ async function getBalance(userId, services, displayUser = userId) {
 	const lockedBalance = balance.balance > balance.unlockedBalance
 		? balance.balance - balance.unlockedBalance
 		: 0n;
+	const unlockBlocks = Number.isInteger(balance.numBlocksToUnlock) && balance.numBlocksToUnlock >= 0
+		? balance.numBlocksToUnlock
+		: null;
+	const unlockInfo = lockedBalance > 0n && unlockBlocks !== null
+		? " (" + unlockBlocks + " " + (unlockBlocks === 1 ? "block" : "blocks") + " until unlock)"
+		: "";
 	return "Balance for " + displayUser + ":\n"
 		+ "Unlocked: " + formatWalletBalance(balance.unlockedBalance) + "\n"
-		+ "Locked: " + formatWalletBalance(lockedBalance);
+		+ "Locked: " + formatWalletBalance(lockedBalance) + unlockInfo;
 }
 
 export default {

@@ -10,7 +10,8 @@ export default {
 	poolsPageURL: "https://miningpoolstats.stream/morelo", // MiningPoolStats page URL
 	poolsDataURL: "https://data.miningpoolstats.stream/data/morelo.js", // MiningPoolStats data URL
 	daemonURL: "", // Daemon URL, creates new local instance if empty
-	walletURL: "", // Wallet URL, creates new local instance if empty
+	walletURL: "", // Wallet RPC URL, checks local RPC if empty
+	walletRpcPort: 38304, // Local wallet RPC port
 	binariesPath: "", // Daemon/Wallet binaries directory, uses bot's directory if empty
 	walletsPath: "", // Wallets directory, uses bot's wallets directory if empty
 	walletName: "tips", // Wallet RPC wallet name to open
