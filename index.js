@@ -121,12 +121,13 @@ bot = new Eris.Client("Bot " + config.token, {
 	disableEvents: {
 		"CHANNEL_BAN_ADD": true,
 		"CHANNEL_BAN_REMOVE": true,
-		"PRESENCE_UPDATE": true,
 		"TYPING_START": true,
 		"VOICE_STATE_UPDATE": true
 	},
 	intents: [
 		"guilds",
+		"guildMembers",
+		"guildPresences",
 		"guildMessages",
 		"guildMessageReactions",
 		1 << 15,

@@ -37,10 +37,17 @@ Slash commands are registered at startup. Message commands accept the configured
 `false` to make mentions show the command-list greeting instead of running the
 following command.
 Enable Discord's Message Content intent for message commands in the Developer Portal.
+To use `tipall` and role tips, also enable the privileged Server Members and
+Presence intents there.
 Configure `statsTextChannel` to post and periodically update a combined statistics
 message. Individual network statistics channels can be configured through
 `statsChannels`.
 
 `address` returns the user's tip address privately. `balance` accepts an optional
-user, and `tip` sends MRL from the sender's unlocked balance to another user's
-bot-managed wallet account. Amounts support up to nine decimal places.
+user. `tip @user amount` sends MRL to one user; `tip @role amount` distributes the
+total amount across human members of that role, and `tipall amount` distributes it
+across online human users in the server. Slash-command `tip` accepts either a user
+or role target. The sender is excluded from group tips. Amounts support up to nine
+decimal places; indivisible atomic units are assigned one by one to the first
+recipients. Each recipient is paid in a separate transaction, so later recipients
+may not receive their share if a transaction fails.
