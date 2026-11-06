@@ -1,4 +1,4 @@
-import { reply } from "../command-utils.js";
+import { reply, sendMessage } from "../command-utils.js";
 
 export default {
 	args_min: 0, args_max: 0, hide_msg: false,
@@ -8,7 +8,7 @@ export default {
 	aliases: [ "pong" ],
 	async run(message, cmd, args, hide, services) {
 		const latency = message.channel.guild?.shard?.latency ?? services.bot.shards.get(0)?.latency;
-		await message.channel.createMessage("Pong! " + (latency == null || !Number.isFinite(latency) ? "unknown" : latency + " ms"));
+		await sendMessage(services.bot, message.channel, "Pong! " + (latency == null || !Number.isFinite(latency) ? "unknown" : latency + " ms"));
 	},
 	async runSlash(interaction, hide, services) {
 		const shardId = services.bot.guildShardMap[interaction.guildID] ?? 0;

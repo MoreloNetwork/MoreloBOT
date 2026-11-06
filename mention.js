@@ -1,4 +1,4 @@
-import { reply } from "./command-utils.js";
+import { reply, sendMessage } from "./command-utils.js";
 
 function response(services) {
 	const prefix = services.config.prefix || "";
@@ -7,7 +7,7 @@ function response(services) {
 
 export default {
 	async run(message, cmd, args, hide, services) {
-		await message.channel.createMessage(response(services));
+		await sendMessage(services.bot, message.channel, response(services));
 	},
 	async runSlash(interaction, hide, services) {
 		await reply(interaction, response(services));

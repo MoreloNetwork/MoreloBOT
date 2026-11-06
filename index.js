@@ -195,31 +195,31 @@ async function runMessageCommand(message, commandName, args, hide = false) {
 	const argsMin = command.args_min ?? command.argsMin ?? 0;
 	const argsMax = command.args_max ?? command.argsMax ?? -1;
 	if(args.length < argsMin || (argsMax !== -1 && args.length > argsMax)) {
-		await helper.reply(hide, message, "Invalid command arguments.");
+		await helper.reply(hide, message, "Invalid command arguments.", undefined, bot);
 		return;
 	}
 	if((command.where === 1 && !message.guildID) || (command.where === 2 && message.guildID)) {
 		await helper.reply(hide, message, command.where === 1
 			? "This command can only be used in a server."
-			: "This command can only be used in direct messages.");
+			: "This command can only be used in direct messages.", undefined, bot);
 		return;
 	}
-	if((hide || command.hide_msg || command.hideMsg) && helper.isDeletable(message)) {
+	if((hide || command.hide_msg || command.hideMsg) && helper.isDeletable(message, bot)) {
 		message.delete().catch(ex => helper.err("Can't delete command message:", ex));
 	}
 	const remaining = isOnCooldown(message.author.id, found.name, command);
 	if(remaining) {
-		await helper.reply(hide, message, "Please wait " + helper.formatTime(remaining * 1000) + " before using this command again.");
+		await helper.reply(hide, message, "Please wait " + helper.formatTime(remaining * 1000) + " before using this command again.", undefined, bot);
 		return;
 	}
 	try {
 		const result = await command.run(message, found.name, args, hide, commandServices);
 		if(typeof result === "string") {
-			await helper.reply(hide, message, result);
+			await helper.reply(hide, message, result, undefined, bot);
 		}
 	} catch(ex) {
 		helper.err("Command " + found.name + ":", ex);
-		await helper.reply(hide, message, "Command failed; please try again.").catch(replyError => {
+		await helper.reply(hide, message, "Command failed; please try again.", undefined, bot).catch(replyError => {
 			helper.err("Command response:", replyError);
 		});
 	}
@@ -261,7 +261,7 @@ bot.once("ready", async () => {
 					const report = await getNetworkReport(daemon, config);
 					if(!statsMessage) {
 						try {
-							const messages = await channel.getMessages({ limit: 50 });
+							const messages = await bot.getMessages(channel.id, { limit: 50 });
 							statsMessage = messages.find(message =>
 								message.author.id === bot.user.id && message.content?.startsWith("Network statistics")
 							);
@@ -270,8 +270,8 @@ bot.once("ready", async () => {
 						}
 					}
 					statsMessage = statsMessage
-						? await channel.editMessage(statsMessage.id, report)
-						: await channel.createMessage(report);
+						? await bot.editMessage(channel.id, statsMessage.id, report)
+						: await bot.createMessage(channel.id, report);
 				} catch(ex) {
 					helper.err("Statistics message:", ex);
 				}
@@ -300,7 +300,7 @@ bot.once("ready", async () => {
 							if(useAddon) {
 								await botAddon.editChannel(channel.id, { name });
 							} else {
-								await channel.edit({ name });
+								await bot.editChannel(channel.id, { name });
 							}
 							useAddon = !useAddon;
 						}
@@ -351,7 +351,7 @@ bot.once("ready", async () => {
 	if(matchedMention) {
 		const remainder = content.slice(matchedMention[0].length).trim();
 		if(!remainder || !config.prefixMention) {
-			await mentionCommand.run(message);
+			await mentionCommand.run(message, null, [], false, commandServices);
 			return;
 		}
 		const [ commandName, ...args ] = remainder.split(/\s+/);

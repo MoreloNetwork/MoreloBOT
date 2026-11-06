@@ -1,5 +1,5 @@
 import { formatHashrateValue, getPools } from "../features.js";
-import { reply } from "../command-utils.js";
+import { reply, sendMessage } from "../command-utils.js";
 
 function formatPools(pools) {
 	if(!pools?.length) {
@@ -15,7 +15,7 @@ export default {
 	description: "Shows Morelo mining pool statistics",
 	options: [],
 	async run(message, cmd, args, hide, services) {
-		await message.channel.createMessage(formatPools(await getPools(services.config)));
+		await sendMessage(services.bot, message.channel, formatPools(await getPools(services.config)));
 	},
 	async runSlash(interaction, hide, services) {
 		await reply(interaction, formatPools(await getPools(services.config)));

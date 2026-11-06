@@ -1,5 +1,5 @@
 import { sendUserTip } from "../wallet-users.js";
-import { getMentionedUserId, getOption, reply } from "../command-utils.js";
+import { getMentionedUserId, getOption, reply, sendMessage } from "../command-utils.js";
 
 async function makeTip(senderId, recipientId, amount, services) {
 	if(!recipientId) {
@@ -34,7 +34,7 @@ export default {
 	],
 	async run(message, cmd, args, hide, services) {
 		const recipientId = getMentionedUserId(message, args[0]);
-		await message.channel.createMessage(await makeTip(
+		await sendMessage(services.bot, message.channel, await makeTip(
 			message.author.id,
 			recipientId,
 			args[1],

@@ -1,5 +1,5 @@
 import { getUserAccount } from "../wallet-users.js";
-import { reply } from "../command-utils.js";
+import { reply, sendMessage } from "../command-utils.js";
 
 async function getAddress(userId, services) {
 	const account = await getUserAccount(
@@ -19,8 +19,8 @@ export default {
 	async run(message, cmd, args, hide, services) {
 		const address = await getAddress(message.author.id, services);
 		const channel = await services.bot.getDMChannel(message.author.id);
-		await channel.createMessage("Your Morelo tip wallet address: " + address);
-		await message.channel.createMessage("I sent your tip wallet address in a direct message.");
+		await sendMessage(services.bot, channel, "Your Morelo tip wallet address: " + address);
+		await sendMessage(services.bot, message.channel, "I sent your tip wallet address in a direct message.");
 	},
 	async runSlash(interaction, hide, services) {
 		await reply(interaction, "Your Morelo tip wallet address: " + await getAddress(interaction.user.id, services));

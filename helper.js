@@ -86,10 +86,14 @@ export default {
 		return days + hours + minutes + seconds;
 	},
 
-	isDeletable(msg) {
-		return (msg.author.id === msg.channel.client.user.id || (msg.guildID && msg.channel.permissionsOf(msg.channel.client.user.id).has(ErisConstants.Permissions.manageMessages)));
+	isDeletable(msg, bot) {
+		if(!bot?.user) {
+			return false;
+		}
+		return msg.author.id === bot.user.id || Boolean(msg.guildID
+			&& msg.channel.permissionsOf?.(bot.user.id)?.has(ErisConstants.Permissions.manageMessages));
 	},
-	reply(hide, msg, content, file) {
+	reply(hide, msg, content, file, bot) {
 		if(msg.createMessage != null) {
 			// Replying to an interaction
 			if(hide) {
@@ -105,14 +109,17 @@ export default {
 			if(typeof content !== "object" || content === null) {
 				content = { content: String(content) };
 			}
-			const perms = msg.channel.permissionsOf(msg.channel.client.user.id);
-			if(perms.allow & ErisConstants.Permissions.readMessageHistory) {
+			const perms = bot?.user && msg.channel.permissionsOf?.(bot.user.id);
+			if(perms?.has(ErisConstants.Permissions.readMessageHistory)) {
 				Object.assign(content, { messageReference: { messageID: msg.id, failIfNotExists: false } });
 			} else {
 				content.content = "<@" + msg.author.id + "> " + content.content;
 			}
 		}
-		return msg.channel.createMessage(content, file);
+		if(!bot || !msg.channel?.id) {
+			return Promise.reject(new Error("Cannot send a message without the bot client and channel ID"));
+		}
+		return bot.createMessage(msg.channel.id, content, file);
 	},
 
 };

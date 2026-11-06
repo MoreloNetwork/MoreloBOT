@@ -1,4 +1,4 @@
-import { reply } from "../command-utils.js";
+import { reply, sendMessage } from "../command-utils.js";
 
 function commandList(services) {
 	const commands = Object.entries(services.commands)
@@ -15,7 +15,7 @@ export default {
 	aliases: [ "help", "commands" ],
 	options: [],
 	async run(message, cmd, args, hide, services) {
-		await message.channel.createMessage(commandList(services).slice(0, 1900));
+		await sendMessage(services.bot, message.channel, commandList(services).slice(0, 1900));
 	},
 	async runSlash(interaction, hide, services) {
 		await reply(interaction, commandList(services).slice(0, 1900));

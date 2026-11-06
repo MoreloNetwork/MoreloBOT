@@ -1,5 +1,5 @@
 import { formatWalletBalance, getUserBalance } from "../wallet-users.js";
-import { getMentionedUserId, getOption, reply } from "../command-utils.js";
+import { getMentionedUserId, getOption, reply, sendMessage } from "../command-utils.js";
 
 async function getBalance(userId, services) {
 	const balance = await getUserBalance(
@@ -25,7 +25,7 @@ export default {
 	} ],
 	async run(message, cmd, args, hide, services) {
 		const userId = getMentionedUserId(message, args[0]) ?? message.author.id;
-		await message.channel.createMessage(await getBalance(userId, services));
+		await sendMessage(services.bot, message.channel, await getBalance(userId, services));
 	},
 	async runSlash(interaction, hide, services) {
 		await reply(interaction, await getBalance(getOption(interaction, "user") ?? interaction.user.id, services));
