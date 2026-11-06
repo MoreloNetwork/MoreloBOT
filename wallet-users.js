@@ -124,16 +124,28 @@ export async function sendUserTip(wallet, filePath, senderId, recipientId, amoun
 	const atomicAmount = parseMRLAmount(amount);
 	const sender = await getUserBalance(wallet, filePath, senderId, legacyAddressesPath);
 	if(atomicAmount > sender.unlockedBalance) {
-		throw new Error("You do not have enough unlocked MRL for this tip.");
+		const error = new Error("Not enough unlocked MRL to cover the tip and transaction fee.");
+		error.code = "INSUFFICIENT_FUNDS";
+		throw error;
 	}
 	const recipientIndex = await getUserAccount(wallet, filePath, recipientId, legacyAddressesPath);
 	const address = await wallet.getAddress(recipientIndex, 0);
-	const transaction = await wallet.createTx({
-		accountIndex: sender.accountIndex,
-		address,
-		amount: atomicAmount,
-		relay: true
-	});
+	let transaction;
+	try {
+		transaction = await wallet.createTx({
+			accountIndex: sender.accountIndex,
+			address,
+			amount: atomicAmount,
+			relay: true
+		});
+	} catch(ex) {
+		if(Number(ex.code) === -37) {
+			const error = new Error("Not enough unlocked MRL to cover the tip and transaction fee.");
+			error.code = "INSUFFICIENT_FUNDS";
+			throw error;
+		}
+		throw ex;
+	}
 	return transaction.getHash();
 }
 
