@@ -9,45 +9,53 @@ Morelo Network Discord bot.
 3. Configure both Discord bot tokens, the daemon and wallet RPC endpoints (or
    local binaries), and the wallet directory/name/password. For a local wallet
    RPC, set `walletRpcPort` as needed.
-4. Start the bot with `npm start`.
+4. In the Discord Developer Portal, enable the privileged Message Content,
+   Server Members and Presence intents.
+5. Start the bot with `npm start`.
 
-The wallet RPC must be private and trusted: the bot uses it to create tip accounts
-and send real MRL transactions. Keep the wallet files and `wallets/users.json`
-backed up, and do not expose an unauthenticated wallet RPC endpoint to the internet.
-When using local RPC, the bot reuses a valid wallet RPC already listening on
-`127.0.0.1` and `walletRpcPort`; otherwise it starts one. The bot stops only the
-RPC process it started on normal shutdown, termination signals, or uncaught
-errors, leaving pre-existing wallet RPC processes running.
-If that server already has a wallet open, the bot reuses it; `walletName` and
-`walletPassword` are used only when it needs to open a wallet.
-If the Python bot's `addresses.json` is present, its user-to-wallet account
-mappings are imported into `walletUsersPath` on first use when those addresses
-belong to the configured wallet.
+## Wallet
 
-## Features
+All tip balances live in one wallet. Every Discord user gets their own wallet
+account, labelled `discord-<user id>`; the labels are the only user mapping, so
+backing up the wallet files (keys and cache) is enough to restore the bot.
 
-- Network height, hashrate, difficulty, block reward, and pending transaction statistics.
-- Optional explorer emission, Xeggex price, and MiningPoolStats pool data.
-- Slash commands and message commands for `network`, `hashrate`, `difficulty`,
-  `pools`, `address`, `balance`, and `tip`.
-- `help`, `ping`, and `uptime` utility commands.
+The wallet RPC must be private and trusted: the bot uses it to create accounts
+and send real MRL transactions. Never expose an unauthenticated wallet RPC to
+the internet. When `walletURL` is empty, the bot uses a wallet RPC already
+listening on `127.0.0.1:walletRpcPort`, or starts one and stops it on shutdown.
+If the wallet RPC already has a wallet open, the bot uses that wallet;
+`walletName` and `walletPassword` are used only when it needs to open one.
 
-Slash commands are registered at startup. Message commands accept the configured
-`prefix` and can also be invoked by mentioning the bot. Set `prefixMention` to
-`false` to make mentions show the command-list greeting instead of running the
-following command.
-Enable Discord's Message Content intent for message commands in the Developer Portal.
-To use `tipall` and role tips, also enable the privileged Server Members and
-Presence intents there.
-Configure `statsTextChannel` to post and periodically update a combined statistics
-message. Individual network statistics channels can be configured through
-`statsChannels`.
+## Commands
 
-`address` returns the user's tip address privately. `balance` accepts an optional
-user. `tip @user amount` sends MRL to one user; `tip @role amount` distributes the
-total amount across human members of that role, and `tipall amount` distributes it
-across online human users in the server. Slash-command `tip` accepts either a user
-or role target. The sender is excluded from group tips. Amounts support up to nine
-decimal places; indivisible atomic units are assigned one by one to the first
-recipients. Each recipient is paid in a separate transaction, so later recipients
-may not receive their share if a transaction fails.
+Slash commands are registered at startup. Message commands use the configured
+`prefix` or a bot mention (set `prefixMention` to `false` to make a mention only
+show the greeting). Every slash command also has a variant ending with `d`, for
+example `/balanced`, whose response is visible only to you; for message
+commands the hidden response is sent as a direct message.
+
+- `network`, `hashrate`, `difficulty`, `pools`: network, price and mining pool statistics.
+- `address`: your deposit address (always hidden).
+- `balance [@user]`: unlocked and locked balance.
+- `tip <@user|@role> <amount>`: send MRL to a user, or split it evenly among
+  the human members of a role.
+- `tipall <amount>`: split MRL evenly among online human members of the server.
+- `withdraw <address> <amount|all>` (alias `transfer`): send MRL to an external
+  address (always hidden). `all` sends the whole unlocked balance minus the fee.
+- `usage` (aliases `help`, `commands`), `ping`, `uptime`.
+
+Amounts accept up to 9 decimal places. Group tips are sent in a single transfer,
+so either every recipient is paid or none is; atomic units that can't be split
+evenly stay with the sender. Received MRL is locked for a few blocks before it
+can be sent again.
+
+## Statistics
+
+Set `statsTextChannel` to post and periodically update a combined statistics
+message, and `statsChannels` to show single values as channel names.
+
+Prices come from the provider named by `priceProvider`, a module in
+`price-providers/` (empty disables prices). To add a provider, create
+`price-providers/<name>.js` exporting `{ name, async getPrice(config) }`, where
+`getPrice` resolves to `{ usd, volume24hUSD?, change24h? }`; see
+`price-providers/coingecko.js`.
