@@ -1,7 +1,7 @@
 import { formatWalletBalance, getUserBalance } from "../wallet-users.js";
 import { getMentionedUserId, getOption, reply, sendMessage } from "../command-utils.js";
 
-async function getBalance(userId, services) {
+async function getBalance(userId, services, displayUser = userId) {
 	const balance = await getUserBalance(
 		services.wallet,
 		services.config.walletUsersPath,
@@ -11,7 +11,7 @@ async function getBalance(userId, services) {
 	const lockedBalance = balance.balance > balance.unlockedBalance
 		? balance.balance - balance.unlockedBalance
 		: 0n;
-	return "Balance for user " + userId + ":\n"
+	return "Balance for " + displayUser + ":\n"
 		+ "Unlocked: " + formatWalletBalance(balance.unlockedBalance) + "\n"
 		+ "Locked: " + formatWalletBalance(lockedBalance);
 }
@@ -28,9 +28,14 @@ export default {
 	} ],
 	async run(message, cmd, args, hide, services) {
 		const userId = getMentionedUserId(message, args[0]) ?? message.author.id;
-		await sendMessage(services.bot, message.channel, await getBalance(userId, services));
+		const user = services.bot.users.get(userId) ?? await services.bot.getRESTUser(userId).catch(() => null);
+		const displayUser = user ? "<@" + userId + ">" : userId;
+		await sendMessage(services.bot, message.channel, await getBalance(userId, services, displayUser));
 	},
 	async runSlash(interaction, hide, services) {
-		await reply(interaction, await getBalance(getOption(interaction, "user") ?? interaction.user.id, services));
+		const userId = getOption(interaction, "user") ?? interaction.user.id;
+		const user = services.bot.users.get(userId) ?? await services.bot.getRESTUser(userId).catch(() => null);
+		const displayUser = user ? "<@" + userId + ">" : userId;
+		await reply(interaction, await getBalance(userId, services, displayUser));
 	}
 };
