@@ -110,10 +110,9 @@ export function parseMRLAmount(value) {
 
 export async function getUserBalance(wallet, filePath, userId, legacyAddressesPath) {
 	const accountIndex = await getUserAccount(wallet, filePath, userId, legacyAddressesPath);
-	const [ balance, unlockedBalance ] = await Promise.all([
-		wallet.getBalance(accountIndex),
-		wallet.getUnlockedBalance(accountIndex)
-	]);
+	const account = await wallet.getAccount(accountIndex);
+	const balance = account.getBalance();
+	const unlockedBalance = account.getUnlockedBalance();
 	return { accountIndex, balance, unlockedBalance };
 }
 
@@ -150,6 +149,10 @@ export async function sendUserTip(wallet, filePath, senderId, recipientId, amoun
 }
 
 export function formatWalletBalance(amount) {
-	const value = BigInt(amount);
-	return (value / atomicUnits) + "." + String(value % atomicUnits).padStart(9, "0") + " MRL";
+	let value = BigInt(amount);
+	const negative = value < 0n;
+	if(negative) {
+		value = -value;
+	}
+	return (negative ? "-" : "") + (value / atomicUnits) + "." + String(value % atomicUnits).padStart(9, "0") + " MRL";
 }

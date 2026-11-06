@@ -8,9 +8,12 @@ async function getBalance(userId, services) {
 		userId,
 		services.config.legacyAddressesPath
 	);
+	const lockedBalance = balance.balance > balance.unlockedBalance
+		? balance.balance - balance.unlockedBalance
+		: 0n;
 	return "Balance for user " + userId + ":\n"
 		+ "Unlocked: " + formatWalletBalance(balance.unlockedBalance) + "\n"
-		+ "Locked: " + formatWalletBalance(balance.balance - balance.unlockedBalance);
+		+ "Locked: " + formatWalletBalance(lockedBalance);
 }
 
 export default {
