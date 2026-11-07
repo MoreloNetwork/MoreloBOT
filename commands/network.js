@@ -1,13 +1,10 @@
 import { getNetworkReport } from "../features.js";
-import { reply, sendMessage } from "../command-utils.js";
 
 export default {
 	description: "Shows Morelo network, price, and pool statistics",
+	cooldown: 5,
 	options: [],
-	async run(message, cmd, args, hide, services) {
-		await sendMessage(services.bot, message.channel, await getNetworkReport(services.daemon, services.config));
-	},
-	async runSlash(interaction, hide, services) {
-		await reply(interaction, await getNetworkReport(services.daemon, services.config));
+	async run(ctx, services) {
+		return getNetworkReport(services.daemon, services.config);
 	}
 };

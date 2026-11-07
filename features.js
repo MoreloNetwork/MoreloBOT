@@ -1,13 +1,9 @@
-import fetch from "node-fetch";
+import { formatMRL } from "./wallet.js";
 
-const atomicUnits = 1000000000n;
+const priceProviders = new Map();
 
-export function formatHashrate(difficulty) {
-	return formatHashrateValue(Number(difficulty) / 120);
-}
-
-export function formatHashrateValue(value) {
-	let hashrate = Number(value);
+export function formatHashrate(hashrate) {
+	hashrate = Number(hashrate);
 	let unit = "H/s";
 	for(const nextUnit of [ "kH/s", "MH/s", "GH/s", "TH/s" ]) {
 		if(hashrate < 1000) {
@@ -19,25 +15,13 @@ export function formatHashrateValue(value) {
 	return hashrate.toFixed(2) + " " + unit;
 }
 
-function preventMentions(text) {
-	return text.replace(/@(everyone|here)/gi, "@\u200b$1");
-}
-
-function formatMRL(amount, digits = 2) {
-	let value = BigInt(amount);
-	const negative = value < 0n;
-	if(negative) {
-		value = -value;
-	}
-	const scale = 10n ** BigInt(digits);
-	const rounded = (value * scale + atomicUnits / 2n) / atomicUnits;
-	const whole = rounded / scale;
-	const fraction = String(rounded % scale).padStart(digits, "0");
-	return (negative ? "-" : "") + whole + (digits ? "." + fraction : "") + " MRL";
+// Morelo targets a 120 second block time
+export function difficultyToHashrate(difficulty) {
+	return formatHashrate(Number(difficulty) / 120);
 }
 
 async function getJson(url, source) {
-	const response = await fetch(url);
+	const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
 	if(!response.ok) {
 		throw new Error(source + " returned HTTP " + response.status);
 	}
@@ -47,18 +31,16 @@ async function getJson(url, source) {
 export async function getNetworkStats(daemon) {
 	const info = await daemon.getInfo();
 	const [ block, txPool ] = await Promise.all([
-		daemon.getBlockByHash(info.topBlockHash),
-		daemon.getTxPool()
+		daemon.getBlockByHash(info.getTopBlockHash()),
+		daemon.getTxPoolStats()
 	]);
-	const output = block.minerTx.outputs[0];
-
 	return {
-		hashrate: formatHashrate(info.getDifficulty()),
+		hashrate: difficultyToHashrate(info.getDifficulty()),
 		height: info.getHeight(),
 		difficulty: String(info.getDifficulty()),
-		pendingTransactions: txPool.length,
-		blockHash: info.topBlockHash,
-		blockReward: formatMRL(output.amount, 4)
+		pendingTransactions: txPool.getNumTxs() ?? 0,
+		blockHash: info.getTopBlockHash(),
+		blockReward: formatMRL(block.getMinerTx().getOutputs()[0].getAmount(), 4)
 	};
 }
 
@@ -70,24 +52,39 @@ export async function getEmission(config) {
 	if(body.status !== "success" || body.data?.coinbase == null) {
 		throw new Error("Explorer returned an invalid emission response");
 	}
-	return formatMRL(body.data.coinbase);
+	return formatMRL(body.data.coinbase, 2);
 }
 
+/**
+ * Returns the configured price provider's quote, or null when none is configured.
+ * A provider is price-providers/<name>.js exporting { name, async getPrice(config) },
+ * where getPrice resolves to { usd, volume24hUSD?, change24h? } (numbers) and throws on failure.
+ */
 export async function getPrice(config) {
-	if(!config.priceURL) {
+	const name = config.priceProvider;
+	if(!name) {
 		return null;
 	}
-	const body = await getJson(config.priceURL, "Price API");
-	for(const field of [ "volume", "volumeSecondary", "changePercent", "primaryUsdValue" ]) {
-		if(body[field] == null) {
-			throw new Error("Price API response is missing " + field);
-		}
+	if(!/^[\w-]+$/.test(name)) {
+		throw new Error("Invalid price provider name: " + name);
 	}
-	return [
-		"24h volume: " + body.volume + " MRL (" + body.volumeSecondary + " USD)",
-		"24h change: " + body.changePercent + "%",
-		"Price: $" + body.primaryUsdValue
-	];
+	if(!priceProviders.has(name)) {
+		priceProviders.set(name, import("./price-providers/" + name + ".js").then(module => module.default));
+	}
+	const provider = await priceProviders.get(name);
+	return { source: provider.name || name, ...await provider.getPrice(config) };
+}
+
+export function formatPrice(price) {
+	const lines = [ "Price: $" + price.usd ];
+	if(price.volume24hUSD != null) {
+		lines.push("24h volume: $" + price.volume24hUSD.toFixed(2));
+	}
+	if(price.change24h != null) {
+		lines.push("24h change: " + price.change24h.toFixed(2) + "%");
+	}
+	lines.push("Source: " + price.source);
+	return lines;
 }
 
 export async function getPools(config) {
@@ -95,12 +92,11 @@ export async function getPools(config) {
 		return null;
 	}
 
-	const page = await fetch(config.poolsPageURL);
+	const page = await fetch(config.poolsPageURL, { signal: AbortSignal.timeout(10000) });
 	if(!page.ok) {
 		throw new Error("MiningPoolStats returned HTTP " + page.status);
 	}
-	const html = await page.text();
-	const token = html.match(/var last_time\s*=\s*["']([^"']+)["']/)?.[1];
+	const token = (await page.text()).match(/var last_time\s*=\s*["']([^"']+)["']/)?.[1];
 	if(!token) {
 		throw new Error("MiningPoolStats page did not contain its data token");
 	}
@@ -112,19 +108,23 @@ export async function getPools(config) {
 		throw new Error("MiningPoolStats returned an invalid pool list");
 	}
 	return body.data
-		.filter(pool => pool && typeof pool.url === "string" && Number.isFinite(Number(pool.hashrate)) && Number(pool.hashrate) >= 0)
+		.filter(pool => typeof pool?.url === "string" && Number(pool.hashrate) >= 0)
 		.sort((left, right) => Number(right.hashrate) - Number(left.hashrate));
+}
+
+export function formatPool(pool) {
+	return "<" + pool.url + "> (" + formatHashrate(pool.hashrate) + ")";
 }
 
 export async function getNetworkReport(daemon, config) {
 	const network = await getNetworkStats(daemon);
 	const [ emission, price, pools ] = await Promise.all([
 		getEmission(config).catch(ex => "unavailable (" + ex.message + ")"),
-		getPrice(config).catch(ex => [ "Price data unavailable (" + ex.message + ")" ]),
+		getPrice(config).catch(ex => ({ error: ex.message })),
 		getPools(config).catch(ex => ({ error: ex.message }))
 	]);
 	const report = [
-		"Network statistics",
+		"**Network statistics**",
 		"Hashrate: " + network.hashrate,
 		"Height: " + network.height,
 		"Difficulty: " + network.difficulty,
@@ -133,23 +133,11 @@ export async function getNetworkReport(daemon, config) {
 		"Pending transactions: " + network.pendingTransactions,
 		"Block hash: " + network.blockHash.slice(0, 10) + "..."
 	];
-
 	if(price) {
-		report.push("", "Morelo price", ...price);
+		report.push("", "**Morelo price**", ...(price.error ? [ "Price data unavailable (" + price.error + ")" ] : formatPrice(price)));
 	}
 	if(pools) {
-		report.push("", "Mining pools");
-		if(Array.isArray(pools)) {
-			report.push(...pools.slice(0, 5).map(pool =>
-				pool.url + " (Hashrate: " + formatHashrateValue(pool.hashrate) + ")"
-			));
-		} else {
-			report.push("Pool data unavailable (" + pools.error + ")");
-		}
+		report.push("", "**Mining pools**", ...(pools.error ? [ "Pool data unavailable (" + pools.error + ")" ] : pools.slice(0, 5).map(formatPool)));
 	}
-	return preventMentions(report.join("\n")).slice(0, 1900);
-}
-
-export function formatMRLAmount(amount) {
-	return formatMRL(amount);
+	return report.join("\n").slice(0, 1900);
 }

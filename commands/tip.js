@@ -1,57 +1,22 @@
-import { sendUserTip } from "../wallet-users.js";
-import { getOption, reply, sendMessage } from "../command-utils.js";
-import { distributeTip, getRoleRecipientIds } from "../tip-utils.js";
+import { UserError, parseRoleId, parseUserId } from "../command-utils.js";
+import { formatMRL, tipUsers } from "../wallet.js";
 
-async function makeTip(senderId, recipientId, roleId, amount, services, guildId) {
-	if((Boolean(recipientId) === Boolean(roleId)) || amount == null) {
-		return "Usage: `" + (services.config.prefix || "m!") + "tip @user|@role amount`.";
+function getRoleMemberIds(services, guildId, roleId) {
+	const guild = services.bot.guilds.get(guildId);
+	if(!guild?.roles.has(roleId)) {
+		throw new UserError("Select a role from this server.");
 	}
-	if(roleId) {
-		if(!guildId) {
-			return "Role tips can only be used in a server.";
-		}
-		return distributeTip(
-			services,
-			senderId,
-			getRoleRecipientIds(services, guildId, roleId),
-			amount
-		);
-	}
-	try {
-		const hash = await sendUserTip(
-			services.wallet,
-			services.config.walletUsersPath,
-			senderId,
-			recipientId,
-			amount,
-			services.config.legacyAddressesPath
-		);
-		return "Tip sent. Transaction: " + hash;
-	} catch(ex) {
-		if(ex.code === "INSUFFICIENT_FUNDS" || Number(ex.code) === -37) {
-			return "Not enough unlocked MRL to cover the tip and transaction fee. Reduce the amount or wait for funds to unlock.";
-		}
-		throw ex;
-	}
-}
-
-function getMessageTipArgs(args) {
-	const targetIndex = args.findIndex(argument => /^<@!?&?\d+>$/.test(argument));
-	const match = targetIndex === -1 ? null : args[targetIndex].match(/^<@(!?&?)(\d+)>$/);
-	return {
-		recipientId: match && !match[1].includes("&") ? match[2] : undefined,
-		roleId: match && match[1].includes("&") ? match[2] : undefined,
-		amount: args.find((_, index) => index !== targetIndex)
-	};
+	return guild.members.filter(member => member.roles.includes(roleId) && !member.bot).map(member => member.id);
 }
 
 export default {
-	args_min: 1, args_max: 2, where: 0,
-	description: "Tips a user or distributes MRL among a server role",
+	description: "Tips a user or splits MRL among members of a server role",
+	usage: "<@user|@role> <amount>",
+	cooldown: 5,
 	options: [
 		{
 			name: "amount",
-			description: "Amount of MRL to send or distribute",
+			description: "Amount of MRL to send (split evenly for a role)",
 			type: 3,
 			required: true
 		},
@@ -63,30 +28,43 @@ export default {
 		},
 		{
 			name: "role",
-			description: "Distribute the tip among members of this server role",
+			description: "Split the tip among members of this server role",
 			type: 8,
 			required: false
 		}
 	],
-	async run(message, cmd, args, hide, services) {
-		const { recipientId, roleId, amount } = getMessageTipArgs(args);
-		await sendMessage(services.bot, message.channel, await makeTip(
-			message.author.id,
-			recipientId,
-			roleId,
-			amount,
-			services,
-			message.guildID
-		));
+	parseArgs(args) {
+		if(args.length !== 2) {
+			return null;
+		}
+		const [ target, amount ] = args;
+		const user = parseUserId(target);
+		const role = parseRoleId(target);
+		return user || role ? { amount, user, role } : null;
 	},
-	async runSlash(interaction, hide, services) {
-		await reply(interaction, await makeTip(
-			interaction.user.id,
-			getOption(interaction, "user"),
-			getOption(interaction, "role"),
-			getOption(interaction, "amount"),
-			services,
-			interaction.guildID
-		));
+	async run(ctx, services) {
+		const { user, role, amount } = ctx.options;
+		if(Boolean(user) === Boolean(role)) {
+			throw new UserError("Choose either a user or a role to tip.");
+		}
+		if(role) {
+			if(!ctx.guildId) {
+				throw new UserError("Role tips can only be used in a server.");
+			}
+			const tip = await tipUsers(services.wallet, ctx.userId, getRoleMemberIds(services, ctx.guildId, role), amount);
+			return "Sent " + formatMRL(tip.share) + " to each of " + tip.recipients.length + " members of <@&" + role + ">.\n"
+				+ "Transaction: " + tip.hashes.join(", ");
+		}
+		if(user === ctx.userId) {
+			throw new UserError("You cannot tip yourself.");
+		}
+		if(services.bot.users.get(user)?.bot) {
+			throw new UserError("Bots cannot receive tips.");
+		}
+		const tip = await tipUsers(services.wallet, ctx.userId, [ user ], amount);
+		return {
+			content: "Sent " + formatMRL(tip.share) + " to <@" + user + ">.\nTransaction: " + tip.hashes.join(", "),
+			allowedMentions: { users: [ user ] }
+		};
 	}
 };

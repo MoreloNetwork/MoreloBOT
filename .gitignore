@@ -9,8 +9,6 @@ config.js
 # Morelo binaries
 morelo*
 
-# Wallet account mapping
-wallets/users.json
-config.js
-
-.vs
+# Wallet files
+wallets/*
+!wallets/.keep
