@@ -4,4 +4,4 @@ node_modules
 morelo*
 .vs
 .github
-.wallets
+./wallets
