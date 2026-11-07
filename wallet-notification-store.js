@@ -6,7 +6,8 @@ const initialState = () => ({
 	historyInitialized: false,
 	lastScannedHeight: 0,
 	tips: {},
-	notifications: {}
+	notifications: {},
+	preferences: {}
 });
 
 export default class WalletNotificationStore {
@@ -32,12 +33,16 @@ export default class WalletNotificationStore {
 						tips: saved.tips && typeof saved.tips === "object" ? saved.tips : {},
 						notifications: saved.notifications && typeof saved.notifications === "object"
 							? saved.notifications
+							: {},
+						preferences: saved.preferences && typeof saved.preferences === "object"
+							? saved.preferences
 							: {}
 					};
 				} catch(ex) {
 					if(ex.code !== "ENOENT") {
 						throw ex;
 					}
+
 					this.state = initialState();
 				}
 				return this.state;
@@ -136,6 +141,26 @@ export default class WalletNotificationStore {
 	async getNotifications() {
 		await this.load();
 		return Object.entries(this.state.notifications).map(([ key, value ]) => [ key, { ...value } ]);
+	}
+
+	async getNotificationPreferences(userId) {
+		await this.load();
+		return {
+			tips: this.state.preferences[String(userId)]?.tips !== false,
+			transfers: this.state.preferences[String(userId)]?.transfers !== false
+		};
+	}
+
+	async setNotificationPreferences(userId, preferences) {
+		await this.load();
+		const key = String(userId);
+		const current = await this.getNotificationPreferences(key);
+		this.state.preferences[key] = {
+			tips: typeof preferences.tips === "boolean" ? preferences.tips : current.tips,
+			transfers: typeof preferences.transfers === "boolean" ? preferences.transfers : current.transfers
+		};
+		await this.save();
+		return { ...this.state.preferences[key] };
 	}
 
 	async getHistoryProgress() {

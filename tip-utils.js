@@ -45,7 +45,7 @@ export async function distributeTip(services, senderId, recipientIds, amount) {
 		amount: share + (BigInt(index) < remainder ? 1n : 0n)
 	}));
 	try {
-		await sendUserTips(
+		const result = await sendUserTips(
 			services.wallet,
 			services.config.walletUsersPath,
 			senderId,
@@ -53,10 +53,24 @@ export async function distributeTip(services, senderId, recipientIds, amount) {
 			services.config.legacyAddressesPath,
 			services.walletNotificationStore
 		);
+		return formatTipResult("Tip distributed", result);
 	} catch(ex) {
 		return ex.code === "INSUFFICIENT_FUNDS" || Number(ex.code) === -37
 			? "Not enough unlocked MRL to cover the tip and transaction fee."
 			: "Tip was not sent: " + ex.message;
 	}
-	return "Tip distributed in one transaction: " + formatWalletBalance(total) + " among " + recipients.length + " recipients.";
+}
+
+export function formatTipResult(title, result) {
+	const shownRecipients = result.recipients.slice(0, 15);
+	const recipientLines = shownRecipients.map(recipient =>
+		"<@" + recipient.recipientId + "> - " + formatWalletBalance(recipient.amount));
+	if(result.recipients.length > shownRecipients.length) {
+		recipientLines.push("and " + (result.recipients.length - shownRecipients.length) + " more");
+	}
+	return title + " in one transaction.\n"
+		+ "Hash: " + result.txHash + "\n"
+		+ "Amount: " + formatWalletBalance(result.totalAmount) + "\n"
+		+ "Recipients (" + result.recipients.length + "):\n"
+		+ recipientLines.join("\n");
 }

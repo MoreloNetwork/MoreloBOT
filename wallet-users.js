@@ -176,6 +176,7 @@ export async function sendUserTips(wallet, filePath, senderId, recipients, legac
 	}
 	const uniqueRecipients = new Set();
 	const destinations = [];
+	const payouts = [];
 	let totalAmount = 0n;
 	for(const recipient of recipients) {
 		const recipientId = String(recipient.recipientId);
@@ -193,6 +194,7 @@ export async function sendUserTips(wallet, filePath, senderId, recipients, legac
 		const accountIndex = await getUserAccount(wallet, filePath, recipientId, legacyAddressesPath);
 		const address = await wallet.getAddress(accountIndex, 0);
 		destinations.push({ address, amount });
+		payouts.push({ recipientId, amount });
 		totalAmount += amount;
 	}
 	if(destinations.length === 0) {
@@ -222,17 +224,12 @@ export async function sendUserTips(wallet, filePath, senderId, recipients, legac
 	const txHash = transaction.getHash();
 	if(notificationStore) {
 		try {
-			await notificationStore.recordTips(txHash, senderId, recipients
-				.filter(recipient => String(recipient.recipientId) !== String(senderId))
-				.map(recipient => ({
-					recipientId: String(recipient.recipientId),
-					amount: typeof recipient.amount === "bigint" ? recipient.amount : parseMRLAmount(recipient.amount)
-				})));
+			await notificationStore.recordTips(txHash, senderId, payouts);
 		} catch(ex) {
 			console.error("Can't save tip notification metadata:", ex);
 		}
 	}
-	return txHash;
+	return { txHash, totalAmount, recipients: payouts };
 }
 
 export function formatWalletBalance(amount) {

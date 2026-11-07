@@ -141,7 +141,18 @@ export async function startWalletNotifications({ wallet, bot, config, store, log
 	}
 
 	async function deliverTransfer(key, record, previous) {
-		if(previous?.historical) {
+		if(previous?.historical || previous?.suppressed) {
+			return;
+		}
+		const preferences = await store.getNotificationPreferences(record.userId);
+		if(record.tip ? !preferences.tips : !preferences.transfers) {
+			await store.setNotification(key, {
+				...record,
+				messageId: previous?.messageId,
+				channelId: previous?.channelId,
+				deliveryPending: false,
+				suppressed: true
+			});
 			return;
 		}
 		if(previous?.messageId && previous.status === record.status) {
@@ -221,6 +232,11 @@ export async function startWalletNotifications({ wallet, bot, config, store, log
 				}
 				const tip = await store.getTipForRecipient(txHash, userId);
 				const record = toRecord(transfer, userId, tip);
+				const preferences = await store.getNotificationPreferences(userId);
+				if(tip ? !preferences.tips : !preferences.transfers) {
+					await store.setNotification(key, { ...record, historical: true, suppressed: true });
+					continue;
+				}
 				if(previous) {
 					await deliverTransfer(key, record, previous);
 					continue;
@@ -283,7 +299,22 @@ export async function startWalletNotifications({ wallet, bot, config, store, log
 			if(!record.deliveryPending) {
 				continue;
 			}
+			if(record.kind === "transfer") {
+				const preferences = await store.getNotificationPreferences(record.userId);
+				if(record.tip ? !preferences.tips : !preferences.transfers) {
+					await store.setNotification(key, { ...record, historical: true, deliveryPending: false, suppressed: true });
+					continue;
+				}
+			}
 			if(record.kind === "history") {
+				const preferences = await store.getNotificationPreferences(record.userId);
+				if((record.categories || []).some(category => !preferences[category])) {
+					await store.setNotification(key, { ...record, deliveryPending: false, suppressed: true });
+					for(const event of record.eventRecords || []) {
+						await store.setNotification(event.key, { ...event.record, historical: true, suppressed: true });
+					}
+					continue;
+				}
 				try {
 					const result = await sendDM(record.userId, record.content);
 					const delivered = {

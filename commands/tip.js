@@ -1,6 +1,6 @@
-import { sendUserTip } from "../wallet-users.js";
+import { formatWalletBalance, parseMRLAmount, sendUserTip } from "../wallet-users.js";
 import { getOption, reply, sendMessage } from "../command-utils.js";
-import { distributeTip, getRoleRecipientIds } from "../tip-utils.js";
+import { distributeTip, formatTipResult, getRoleRecipientIds } from "../tip-utils.js";
 
 async function makeTip(senderId, recipientId, roleId, amount, services, guildId) {
 	if((Boolean(recipientId) === Boolean(roleId)) || amount == null) {
@@ -27,7 +27,11 @@ async function makeTip(senderId, recipientId, roleId, amount, services, guildId)
 			services.config.legacyAddressesPath,
 			services.walletNotificationStore
 		);
-		return "Tip sent. Transaction: " + hash;
+		return formatTipResult("Tip sent", {
+			txHash: hash,
+			totalAmount: parseMRLAmount(amount),
+			recipients: [ { recipientId: String(recipientId), amount: parseMRLAmount(amount) } ]
+		});
 	} catch(ex) {
 		if(ex.code === "INSUFFICIENT_FUNDS" || Number(ex.code) === -37) {
 			return "Not enough unlocked MRL to cover the tip and transaction fee. Reduce the amount or wait for funds to unlock.";
