@@ -55,6 +55,7 @@ export async function distributeTip(services, senderId, recipientIds, amount) {
 		);
 		return formatTipResult("Tip distributed", result);
 	} catch(ex) {
+		services.logger?.err("Tip distribution failed:", ex);
 		return ex.code === "INSUFFICIENT_FUNDS" || Number(ex.code) === -37
 			? "Not enough unlocked MRL to cover the tip and transaction fee."
 			: "Tip was not sent: " + ex.message;

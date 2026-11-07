@@ -1,6 +1,6 @@
-import { formatWalletBalance, parseMRLAmount, sendUserTip } from "../wallet-users.js";
-import { getOption, reply, sendMessage } from "../command-utils.js";
-import { distributeTip, formatTipResult, getRoleRecipientIds } from "../tip-utils.js";
+import { formatWalletBalance, parseMRLAmount, sendUserTip } from "../api/wallet-users.js";
+import { getOption, reply, sendMessage } from "../core/command-utils.js";
+import { distributeTip, formatTipResult, getRoleRecipientIds } from "../api/tip-utils.js";
 
 async function makeTip(senderId, recipientId, roleId, amount, services, guildId) {
 	if((Boolean(recipientId) === Boolean(roleId)) || amount == null) {

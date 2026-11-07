@@ -1,4 +1,4 @@
-import helper from "../helper.js";
+import helper from "../core/helper.js";
 
 export default {
 	description: "Shows bot's uptime",

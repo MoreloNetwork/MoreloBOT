@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatTipResult } from "../tip-utils.js";
+import { formatTipResult, getOnlineRecipientIds } from "../api/tip-utils.js";
 
 test("tip response includes transaction hash, amount, and recipient details", () => {
 	const response = formatTipResult("Tip sent", {
@@ -32,4 +32,23 @@ test("tipall response lists up to 15 recipients and reports the rest", () => {
 	assert.match(response, /<@15> - 1\.000000000 MRL/);
 	assert.doesNotMatch(response, /<@16>/);
 	assert.match(response, /and 2 more/);
+});
+
+test("tipall only includes cached online non-bot members", () => {
+	const services = {
+		bot: {
+			guilds: new Map([ [ "guild-1", { members: new Map([
+				[ "1", { id: "1", status: "online", user: { bot: false } } ],
+				[ "2", { id: "2", status: "offline", user: { bot: false } } ],
+				[ "3", { id: "3", status: "online", user: { bot: true } } ],
+				[ "4", { id: "4", user: { bot: false } } ]
+			]) } ] ])
+		}
+	};
+
+	assert.deepEqual(getOnlineRecipientIds(services, "guild-1"), [ "1" ]);
+});
+
+test("tipall rejects when guild members are unavailable", () => {
+	assert.throws(() => getOnlineRecipientIds({ bot: { guilds: new Map() } }, "guild-1"), /members are not available/);
 });

@@ -6,3 +6,4 @@ morelo*
 .github
 wallets
 *.log
+logs/

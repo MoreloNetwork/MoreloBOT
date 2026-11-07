@@ -1,5 +1,5 @@
-import { formatMRL } from "../wallet.js";
-import { getOption, reply } from "../command-utils.js";
+import { formatMRL } from "../api/wallet.js";
+import { getOption, reply, sendMessage } from "../core/command-utils.js";
 
 function formatWager(wager) {
 	const outcome = wager.game === "coinflip"
@@ -15,11 +15,38 @@ function formatWager(wager) {
 function formatTestPlay(result) {
 	const payout = BigInt(result.payout || "0");
 	const outcome = result.game === "roulette" && result.outcome?.number != null
-		? result.outcome.number + " " + result.outcome.color
-		: result.outcome;
-	return "TEST casino " + result.game + ": " + (outcome ?? result.status) + ". "
+		? formatRouletteOutcome(result.outcome)
+		: result.game === "dice" ? "🎲 " + result.outcome
+			: result.game === "coinflip" ? (result.outcome === "heads" ? "🪙 Heads" : "🪙 Tails")
+				: result.outcome;
+	return "🧪 TEST casino " + result.game + ": " + (outcome ?? result.status) + ". "
 		+ (result.won ? "Win; test payout " + formatMRL(payout) + "." : "No win; test stake was consumed.")
 		+ "\nTest balance: " + formatMRL(BigInt(result.balance ?? "0")) + ". No MRL was transferred.";
+}
+
+function formatRouletteOutcome(outcome) {
+	const emoji = outcome.color === "red" ? "🔴" : outcome.color === "black" ? "⚫" : "🟢";
+	return emoji + " **" + outcome.number + "** " + outcome.color;
+}
+
+async function animateRoulette(bot, channel, result, testMode, logger) {
+	const frames = [ "🔴 7 ⚫ 20 🟢 0 🔴 3 ⚫ 18", "⚫ 26 🔴 9 ⚫ 30 🟢 0 🔴 12", "🔴 5 ⚫ 22 🔴 14 ⚫ 31 🟢 0", "⚫ 17 🔴 1 ⚫ 24 🔴 16 🟢 0" ];
+	const prefix = testMode ? "🧪 TEST " : "";
+	let message;
+	try {
+		message = await bot.createMessage(channel.id, prefix + "🎰 Roulette wheel spinning…\n" + frames[0]);
+		for(let index = 1; index < frames.length; index++) {
+			await new Promise(resolve => setTimeout(resolve, 300));
+			await bot.editMessage(channel.id, message.id, prefix + "🎰 Roulette wheel spinning…\n" + frames[index]);
+		}
+		await bot.editMessage(channel.id, message.id, prefix + "🎰 Result: " + formatRouletteOutcome(result.outcome) + ". "
+			+ (result.won ? "Win; payout " + formatMRL(BigInt(result.payout)) + "." : "No win.")
+			+ (testMode ? " Test balance: " + formatMRL(BigInt(result.balance)) + ". No MRL was transferred." : ""));
+		return true;
+	} catch(ex) {
+		logger?.err("Roulette animation failed after wager processing:", ex);
+		return { error: ex };
+	}
 }
 
 function formatBlockRound(round) {
@@ -34,19 +61,21 @@ function formatBlockRound(round) {
 		.join("\n");
 }
 
-function formatPlay(result) {
+export function formatPlay(result) {
 	const outcome = result.game === "coinflip"
 		? result.outcome
-		: result.outcome.number + " " + result.outcome.color;
+		: result.game === "roulette" ? formatRouletteOutcome(result.outcome)
+			: result.game === "dice" ? "🎲 **" + result.outcome + "**"
+				: result.outcome;
 	const status = result.won
 		? "Won; payout " + formatMRL(BigInt(result.payout)) + " was sent."
 		: "Lost; the stake was sent to the house.";
-	return "Casino " + result.game + ": " + outcome + ". " + status
+	return (result.game === "coinflip" ? "🪙 " : "🎰 ") + "Casino " + result.game + ": " + outcome + ". " + status
 		+ "\nWager: `" + result.id.slice(0, 8) + "`; stake: " + formatMRL(BigInt(result.stake))
 		+ "\nTransaction: `" + (result.payoutTxHash || result.stakeTxHash) + "`";
 }
 
-async function runCasino(userId, action, args, casino, sandbox) {
+async function runCasino(userId, action, args, casino, sandbox, context) {
 	const adminIds = Array.isArray(casino.config?.casinoAdminUserIds) ? casino.config.casinoAdminUserIds.map(String) : [];
 	if(!adminIds.includes(String(userId))) {
 		return "Casino is currently restricted to configured administrators.";
@@ -101,12 +130,32 @@ async function runCasino(userId, action, args, casino, sandbox) {
 			return action === "dice" ? "Usage: `m!casino dice <1-6> <test amount>`." : "Usage: `m!casino roulette <red|black|0-36> <test amount>`.";
 		}
 		const result = await sandbox.play(userId, action, selection.toLowerCase(), amount);
+		if(action === "roulette" && context?.bot && context?.channel) {
+			return {
+				content: formatTestPlay(result),
+				animation: () => animateRoulette(context.bot, context.channel, result, true, context.logger),
+				fallback: formatTestPlay(result)
+			};
+		}
 		return formatTestPlay(result);
 	}
 	if(!testMode && action === "dice") {
 		const [ selection, amount ] = args;
 		if(!selection || !amount) return "Usage: `m!casino dice <1-6> <amount>`.";
 		return formatPlay(await casino.play(userId, action, selection, amount));
+	}
+	if(!testMode && action === "roulette") {
+		const [ selection, amount ] = args;
+		if(!selection || !amount) return "Usage: `m!casino roulette <red|black|0-36> <amount>`.";
+		const result = await casino.play(userId, action, selection.toLowerCase(), amount);
+		if(context?.bot && context?.channel) {
+			return {
+				content: formatPlay(result),
+				animation: () => animateRoulette(context.bot, context.channel, result, false, context.logger),
+				fallback: formatPlay(result)
+			};
+		}
+		return formatPlay(result);
 	}
 	if(testMode && action === "blackjack") {
 		const [ blackjackAction, amount ] = args;
@@ -120,8 +169,9 @@ async function runCasino(userId, action, args, casino, sandbox) {
 		} else {
 			return "Usage: `m!casino blackjack start <test amount>`, then `hit` or `stand`.";
 		}
-		return "TEST blackjack " + result.status + ": player " + (result.player || []).join(" ")
-			+ (result.dealer ? "; dealer " + result.dealer.join(" ") : "; dealer shows " + result.dealerVisible)
+		const formatCard = card => card.replace(/([♠♥♦♣])$/, suit => ({ "♠": "♠️", "♥": "♥️", "♦": "♦️", "♣": "♣️" })[suit]);
+		return "🧪 TEST blackjack " + result.status + ": player " + (result.player || []).map(formatCard).join(" ")
+			+ (result.dealer ? "; dealer " + result.dealer.map(formatCard).join(" ") : "; dealer shows " + formatCard(result.dealerVisible))
 			+ (result.payout ? "; test payout " + formatMRL(BigInt(result.payout)) : "")
 			+ (result.balance ? "; test balance " + formatMRL(BigInt(result.balance)) : "") + ". No MRL was transferred.";
 	}
@@ -209,7 +259,19 @@ export default {
 		{ name: "proof", description: "Verified tx/block hash or no-transfer-confirmed", type: 3, required: false }
 	],
 	async run(message, cmd, args, hide, services) {
-		return runCasino(message.author.id, args[0]?.toLowerCase(), args.slice(1), services.casino, services.casinoSandbox);
+		const result = await runCasino(message.author.id, args[0]?.toLowerCase(), args.slice(1), services.casino, services.casinoSandbox, {
+			bot: services.bot,
+			channel: message.channel,
+			logger: services.logger
+		});
+		if(result?.animation) {
+			const animation = await result.animation();
+			if(animation?.error) {
+				await sendMessage(services.bot, message.channel, result.fallback);
+			}
+			return undefined;
+		}
+		return result;
 	},
 	async runSlash(interaction, hide, services) {
 		const action = getOption(interaction, "game");
@@ -218,12 +280,20 @@ export default {
 			getOption(interaction, "resolution"),
 			getOption(interaction, "proof")
 		];
-		await reply(interaction, await runCasino(
+		const result = await runCasino(
 			interaction.user.id,
 			action,
 			[ getOption(interaction, "selection"), getOption(interaction, "amount"), ...args ].filter(value => value != null),
 			services.casino,
-			services.casinoSandbox
-		));
+			services.casinoSandbox,
+			{ interaction, logger: services.logger }
+		);
+		if(result?.animation) {
+			await interaction.defer(64);
+			const animation = await result.animation();
+			await interaction.createMessage({ content: animation?.error ? result.fallback : "Roulette result is shown above.", flags: 64 });
+			return;
+		}
+		await reply(interaction, result);
 	}
 };

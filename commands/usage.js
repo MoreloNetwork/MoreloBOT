@@ -1,4 +1,4 @@
-﻿import { reply, sendMessage } from "../command-utils.js";
+﻿import { reply, sendMessage } from "../core/command-utils.js";
 
 function commandList(services) {
 	const commands = Object.entries(services.commands)

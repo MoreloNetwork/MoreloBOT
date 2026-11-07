@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import helper from "../core/helper.js";
 
 const atomicUnits = 1000000000n;
 let users;
@@ -161,7 +162,7 @@ export async function sendUserTip(wallet, filePath, senderId, recipientId, amoun
 		try {
 			await notificationStore.recordTip(txHash, senderId, recipientId, atomicAmount);
 		} catch(ex) {
-			console.error("Can't save tip notification metadata:", ex);
+			helper.err("Can't save tip notification metadata:", ex);
 		}
 	}
 	return txHash;
@@ -226,7 +227,7 @@ export async function sendUserTips(wallet, filePath, senderId, recipients, legac
 		try {
 			await notificationStore.recordTips(txHash, senderId, payouts);
 		} catch(ex) {
-			console.error("Can't save tip notification metadata:", ex);
+			helper.err("Can't save tip notification metadata:", ex);
 		}
 	}
 	return { txHash, totalAmount, recipients: payouts };

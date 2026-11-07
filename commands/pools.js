@@ -1,5 +1,5 @@
-﻿import { formatHashrateValue, getPools } from "../features.js";
-import { reply, sendMessage } from "../command-utils.js";
+﻿import { formatHashrateValue, getPools } from "../api/features.js";
+import { reply, sendMessage } from "../core/command-utils.js";
 
 function formatPools(pools) {
 	if(!pools?.length) {

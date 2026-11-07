@@ -3,13 +3,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import WalletNotificationStore from "../wallet-notification-store.js";
+import WalletNotificationStore from "../api/wallet-notification-store.js";
 import {
 	getIncomingTransferKey,
 	getTransferStatus,
 	normalizeWalletTransfersResponse,
 	startWalletNotifications
-} from "../wallet-notifications.js";
+} from "../api/wallet-notifications.js";
 
 function makeTransfer({ hash, amount = 1000000000n, accountIndex = 0, subaddressIndex = 0, confirmed = true, locked = false, height = 90 }) {
 	const tx = {

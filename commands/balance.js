@@ -1,5 +1,5 @@
-﻿import { formatWalletBalance, getUserBalance } from "../wallet-users.js";
-import { getMentionedUserId, getOption, reply, sendMessage } from "../command-utils.js";
+﻿import { formatWalletBalance, getUserBalance } from "../api/wallet-users.js";
+import { getMentionedUserId, getOption, reply, sendMessage } from "../core/command-utils.js";
 
 async function getBalance(userId, services, displayUser = userId) {
 	const balance = await getUserBalance(

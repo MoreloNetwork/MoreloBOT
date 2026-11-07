@@ -24,21 +24,21 @@ import monero from "monero-ts";
 import * as Eris from "eris";
 import fs from "node:fs/promises";
 import config from "./config.js";
-import helper from "./helper.js";
-import { UserError } from "./command-utils.js";
-import { getEmission, getMempool, getNetworkReport, getNetworkStats, formatHashrateValue, formatMempool } from "./features.js";
-import mentionCommand from "./mention.js";
-import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
-import WalletNotificationStore from "./wallet-notification-store.js";
-import { startWalletNotifications } from "./wallet-notifications.js";
-import CasinoService from "./casino-service.js";
-import CasinoStore from "./casino-store.js";
-import CasinoBlockGame from "./casino-block-game.js";
-import CasinoBlockStore from "./casino-block-store.js";
-import CasinoSandbox from "./casino-sandbox.js";
-import CasinoSandboxStore from "./casino-sandbox-store.js";
-import CasinoSandboxBlockStore from "./casino-sandbox-block-store.js";
-import { formatMRL, parseMRL } from "./wallet.js";
+import helper from "./core/helper.js";
+import { UserError } from "./core/command-utils.js";
+import { getEmission, getMempool, getNetworkReport, getNetworkStats, formatHashrateValue, formatMempool } from "./api/features.js";
+import mentionCommand from "./core/mention.js";
+import { connectWalletRpc, stopOwnedWalletRpc } from "./api/wallet-rpc.js";
+import WalletNotificationStore from "./api/wallet-notification-store.js";
+import { startWalletNotifications } from "./api/wallet-notifications.js";
+import CasinoService from "./casino/casino-service.js";
+import CasinoStore from "./casino/casino-store.js";
+import CasinoBlockGame from "./casino/casino-block-game.js";
+import CasinoBlockStore from "./casino/casino-block-store.js";
+import CasinoSandbox from "./casino/casino-sandbox.js";
+import CasinoSandboxStore from "./casino/casino-sandbox-store.js";
+import CasinoSandboxBlockStore from "./casino/casino-sandbox-block-store.js";
+import { formatMRL, parseMRL } from "./api/wallet.js";
 
 const fetch = globalThis.fetch;
 
@@ -286,7 +286,7 @@ const casinoSandbox = new CasinoSandbox({
 });
 const blockGame = config.casinoTestMode === true ? casinoSandbox : casinoBlockGame;
 const blockStore = config.casinoTestMode === true ? casinoSandboxBlockStore : casinoBlockStore;
-const commandServices = { daemon, wallet, bot, config, commands: cmds, walletNotificationStore, casino, casinoSandbox };
+const commandServices = { daemon, wallet, bot, config, commands: cmds, walletNotificationStore, casino, casinoSandbox, logger: helper };
 
 async function checkCasinoBlocks() {
 	try {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatMempool } from "../features.js";
+import { formatMempool } from "../api/features.js";
 
 test("mempool formatter shows transaction count, hashes, amounts, and fees", () => {
 	const message = formatMempool({

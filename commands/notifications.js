@@ -1,4 +1,4 @@
-import { getOption, reply, sendMessage } from "../command-utils.js";
+import { getOption, reply, sendMessage } from "../core/command-utils.js";
 
 const categories = {
 	tips: "tip notifications",

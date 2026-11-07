@@ -1,5 +1,5 @@
-﻿import { getUserAccount } from "../wallet-users.js";
-import { reply, sendMessage } from "../command-utils.js";
+﻿import { getUserAccount } from "../api/wallet-users.js";
+import { reply, sendMessage } from "../core/command-utils.js";
 
 async function getAddress(userId, services) {
 	const account = await getUserAccount(

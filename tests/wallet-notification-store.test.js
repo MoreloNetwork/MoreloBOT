@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import WalletNotificationStore from "../wallet-notification-store.js";
+import WalletNotificationStore from "../api/wallet-notification-store.js";
 
 test("tip metadata, notifications, and scan progress survive reopening the store", async t => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-store-"));
@@ -49,4 +49,29 @@ test("multi-recipient tip metadata is resolved by transaction hash and recipient
 		recordedAt: (await store.getTip("tx-many:200")).recordedAt
 	});
 	assert.equal(await store.getTipForRecipient("tx-many", "400"), undefined);
+});
+
+test("notification store retries transient Windows rename locks", async t => {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-notification-retry-"));
+	const filePath = path.join(directory, "notifications.json");
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	let attempts = 0;
+	const store = new WalletNotificationStore(filePath, {
+		rename: async (...args) => {
+			attempts++;
+			if(attempts < 3) {
+				const error = new Error("temporary file lock");
+				error.code = "EPERM";
+				throw error;
+			}
+			const { rename } = await import("node:fs/promises");
+			return rename(...args);
+		},
+		wait: async () => {}
+	});
+
+	await store.setNotification("event", { status: "unconfirmed" });
+	assert.equal(attempts, 3);
+	assert.equal(JSON.parse(await readFile(filePath, "utf8")).notifications.event.status, "unconfirmed");
+	assert.deepEqual((await readdir(directory)).filter(name => name.endsWith(".tmp")), []);
 });

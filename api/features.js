@@ -72,7 +72,7 @@ export async function getPrice(config) {
 		if(!/^[\w-]+$/.test(name)) {
 			throw new Error("Invalid price provider name: " + name);
 		}
-		const provider = await import("./price-providers/" + name + ".js");
+		const provider = await import("../price-providers/" + name + ".js");
 		const quote = await provider.default.getPrice(config);
 		return [
 			"Price: $" + quote.usd,

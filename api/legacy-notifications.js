@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import helper from "./helper.js";
+import helper from "../core/helper.js";
 import { formatMRL, getAccountUsers } from "./wallet.js";
 
 const pollInterval = 30000;

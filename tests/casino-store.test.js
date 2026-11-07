@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import CasinoStore from "../casino-store.js";
+import CasinoStore from "../casino/casino-store.js";
 
 async function createStore(t) {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-casino-store-"));

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { getUserIdsByAccount, sendUserTip, sendUserTips } from "../wallet-users.js";
+import { getUserIdsByAccount, sendUserTip, sendUserTips } from "../api/wallet-users.js";
 
 test("account indexes map back to every configured Discord user", async t => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-users-"));

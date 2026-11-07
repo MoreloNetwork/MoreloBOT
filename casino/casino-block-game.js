@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { UserError } from "./command-utils.js";
-import { formatMRL, getUserAccount, getUserAddress, parseMRL } from "./wallet.js";
+import { UserError } from "../core/command-utils.js";
+import { formatMRL, getUserAccount, getUserAddress, parseMRL } from "../api/wallet.js";
 
 const openStatuses = new Set([ "stake_submitting", "open", "payout_submitting", "needs_review" ]);
 

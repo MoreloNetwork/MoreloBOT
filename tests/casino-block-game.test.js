@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import CasinoBlockGame, { getBlockGuessPayout, matchesBlockGuess } from "../casino-block-game.js";
-import CasinoBlockStore from "../casino-block-store.js";
+import CasinoBlockGame, { getBlockGuessPayout, matchesBlockGuess } from "../casino/casino-block-game.js";
+import CasinoBlockStore from "../casino/casino-block-store.js";
 
 const blockHash = "0123456789abcdef".repeat(4);
 

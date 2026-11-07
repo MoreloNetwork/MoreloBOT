@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { UserError } from "./command-utils.js";
-import { formatMRL, getUserAccount, getUserAddress, parseMRL } from "./wallet.js";
-import { getUserIdsByAccount } from "./wallet-users.js";
+import { UserError } from "../core/command-utils.js";
+import { formatMRL, getUserAccount, getUserAddress, parseMRL } from "../api/wallet.js";
+import { getUserIdsByAccount } from "../api/wallet-users.js";
 import { resolveCoinflip, resolveDice, resolveRoulette, rollDice, spinRoulette, tossCoin } from "./casino-games.js";
 
 function configuredAmount(value, name) {
@@ -10,9 +10,6 @@ function configuredAmount(value, name) {
 	} catch {
 		throw new UserError("Casino configuration is invalid: " + name + ".");
 	}
-
-function cardValue(card) {
-	return Math.min(card.rank, 10);
 }
 }
 

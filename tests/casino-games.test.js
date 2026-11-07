@@ -7,7 +7,7 @@ import {
 	rollDice,
 	spinRoulette,
 	tossCoin
-} from "../casino-games.js";
+} from "../casino/casino-games.js";
 
 test("coin toss uses a bounded random result and pays 2x on a win", () => {
 	let bound;

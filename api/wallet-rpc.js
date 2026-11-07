@@ -1,5 +1,5 @@
 ﻿import { spawn } from "node:child_process";
-import helper from "./helper.js";
+import helper from "../core/helper.js";
 
 async function isWalletRpcAvailable(url) {
 	let response;

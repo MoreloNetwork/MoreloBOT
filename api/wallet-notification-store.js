@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 const initialState = () => ({
 	version: 1,
@@ -12,9 +13,10 @@ const initialState = () => ({
 });
 
 export default class WalletNotificationStore {
-	constructor(filePath = "wallets/notifications.json") {
+	constructor(filePath = "wallets/notifications.json", dependencies = {}) {
 		this.filePath = filePath;
-		this.tempPath = filePath + "." + process.pid + ".tmp";
+		this.rename = dependencies.rename || fs.rename;
+		this.wait = dependencies.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
 		this.state = initialState();
 		this.loadPromise = undefined;
 		this.saveQueue = Promise.resolve();
@@ -62,8 +64,24 @@ export default class WalletNotificationStore {
 		await this.load();
 		const operation = this.saveQueue.catch(() => {}).then(async () => {
 			await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-			await fs.writeFile(this.tempPath, JSON.stringify(this.state), { mode: 0o600 });
-			await fs.rename(this.tempPath, this.filePath);
+			const tempPath = this.filePath + "." + process.pid + "." + randomUUID() + ".tmp";
+			await fs.writeFile(tempPath, JSON.stringify(this.state), { mode: 0o600 });
+			try {
+				for(let attempt = 0; ; attempt++) {
+					try {
+						await this.rename(tempPath, this.filePath);
+						break;
+					} catch(ex) {
+						if(![ "EPERM", "EBUSY", "EACCES" ].includes(ex.code) || attempt >= 4) {
+							throw ex;
+						}
+						await this.wait(50 * 2 ** attempt);
+					}
+				}
+			} catch(ex) {
+				await fs.rm(tempPath, { force: true }).catch(() => {});
+				throw ex;
+			}
 		});
 		this.saveQueue = operation;
 		return operation;

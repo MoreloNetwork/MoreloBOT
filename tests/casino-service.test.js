@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import CasinoService from "../casino-service.js";
-import CasinoStore from "../casino-store.js";
+import CasinoService from "../casino/casino-service.js";
+import CasinoStore from "../casino/casino-store.js";
 
 async function withNormalMode(action) {
 	const previousMode = process.env.MORELOBOT_TEST_MODE;

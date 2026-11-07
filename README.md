@@ -2,6 +2,10 @@
 
 Morelo Network Discord bot.
 
+Source modules are grouped under `api/` (wallet and network integrations),
+`casino/` (casino games and state stores), `core/` (shared bot utilities),
+and `commands/`. Application logs are written to `logs/`.
+
 ## Setup
 
 1. Install Node.js 20 or later and run `pnpm install`.

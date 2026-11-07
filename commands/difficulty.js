@@ -1,5 +1,5 @@
-﻿import { getNetworkStats } from "../features.js";
-import { reply, sendMessage } from "../command-utils.js";
+﻿import { getNetworkStats } from "../api/features.js";
+import { reply, sendMessage } from "../core/command-utils.js";
 
 export default {
 	description: "Shows the current Morelo network difficulty",

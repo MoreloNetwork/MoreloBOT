@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { startNotifications } from "../notifications.js";
+import { startNotifications } from "../api/legacy-notifications.js";
 
 const transfer = (txid, major, amount, type, height = 0) => ({ txid, amount, type, height, subaddr_index: { major, minor: 0 } });
 

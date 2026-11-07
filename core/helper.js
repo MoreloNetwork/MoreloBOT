@@ -18,6 +18,29 @@
  */
 
 import { Constants as ErisConstants } from "eris";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { format } from "node:util";
+
+const logQueues = new Map();
+
+function appendLog(fileName, line) {
+	const filePath = path.join("logs", fileName);
+	const queued = (logQueues.get(fileName) || Promise.resolve()).catch(() => {}).then(async () => {
+		await fs.mkdir(path.dirname(filePath), { recursive: true });
+		await fs.appendFile(filePath, line + "\n", "utf8");
+	});
+	logQueues.set(fileName, queued);
+	queued.catch(ex => console.error("Can't write application log:", ex));
+}
+
+function logText(level, formatString, args) {
+	const safeArgs = args.map(value => value instanceof Error ? value.stack || String(value) : value);
+	const message = typeof formatString === "string" ? format(formatString, ...safeArgs) : format(formatString, ...safeArgs);
+	const line = "[" + new Date().toISOString() + "] " + message;
+	appendLog(level === "error" ? "error.log" : "application.log", line);
+	return line;
+}
 
 export default {
 	getDate() {
@@ -31,6 +54,7 @@ export default {
 			+ ("00" + date.getMilliseconds()).slice(-3);
 	},
 	log(format, ...args) {
+		logText("info", format, args);
 		if(typeof format === "string") {
 			console.log("\x1B[32m[%s]\x1B[0m " + format, this.getDate(), ...args);
 		} else {
@@ -38,6 +62,7 @@ export default {
 		}
 	},
 	err(format, ...args) {
+		logText("error", format, args);
 		if(typeof format === "string") {
 			console.error("\x1B[31m[%s]\x1B[0m " + format, this.getDate(), ...args);
 		} else {
@@ -45,6 +70,7 @@ export default {
 		}
 	},
 	warn(format, ...args) {
+		logText("warn", format, args);
 		if(typeof format === "string") {
 			console.warn("\x1B[33m[%s]\x1B[0m " + format, this.getDate(), ...args);
 		} else {
@@ -52,6 +78,7 @@ export default {
 		}
 	},
 	dbg(format, ...args) {
+		logText("debug", format, args);
 		if(typeof format === "string") {
 			console.debug("\x1B[34m[%s]\x1B[0m " + format, this.getDate(), ...args);
 		} else {

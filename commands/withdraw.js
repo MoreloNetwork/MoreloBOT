@@ -1,5 +1,5 @@
-import { withdraw } from "../wallet.js";
-import { getOption, reply, sendMessage } from "../command-utils.js";
+import { withdraw } from "../api/wallet.js";
+import { getOption, reply, sendMessage } from "../core/command-utils.js";
 
 async function sendWithdrawal(userId, services, address, amount) {
 	const hashes = await withdraw(services.wallet, userId, address.trim(), amount, services.config);

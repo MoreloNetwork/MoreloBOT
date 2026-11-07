@@ -1,5 +1,5 @@
-﻿import { getOption, reply, sendMessage } from "../command-utils.js";
-import { distributeTip, getOnlineRecipientIds } from "../tip-utils.js";
+﻿import { getOption, reply, sendMessage } from "../core/command-utils.js";
+import { distributeTip, getOnlineRecipientIds } from "../api/tip-utils.js";
 
 async function makeTip(senderId, amount, services, guildId) {
 	if(!guildId) {
@@ -8,12 +8,17 @@ async function makeTip(senderId, amount, services, guildId) {
 	if(amount == null) {
 		return "Usage: `" + (services.config.prefix || "m!") + "tipall amount`.";
 	}
-	return distributeTip(
-		services,
-		senderId,
-		getOnlineRecipientIds(services, guildId),
-		amount
-	);
+	try {
+		return await distributeTip(
+			services,
+			senderId,
+			getOnlineRecipientIds(services, guildId),
+			amount
+		);
+	} catch(ex) {
+		services.logger?.err("Tipall recipient selection failed:", ex);
+		return "Tipall failed: " + ex.message;
+	}
 }
 
 export default {
@@ -34,11 +39,13 @@ export default {
 		));
 	},
 	async runSlash(interaction, hide, services) {
-		await reply(interaction, await makeTip(
+		await interaction.defer(64);
+		const response = await makeTip(
 			interaction.user.id,
 			getOption(interaction, "amount"),
 			services,
 			interaction.guildID
-		));
+		);
+		await interaction.createMessage({ content: response, flags: 64 });
 	}
 };

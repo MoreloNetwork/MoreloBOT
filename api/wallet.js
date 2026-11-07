@@ -1,4 +1,5 @@
-import { UserError } from "./command-utils.js";
+import { UserError } from "../core/command-utils.js";
+import helper from "../core/helper.js";
 import {
 	getUserAccount as getMappedUserAccount,
 	getUserIdsByAccount
@@ -21,9 +22,9 @@ export async function connectWallet(monero, config, binPath, execExt) {
 		try {
 			wallet = await monero.connectToWalletRpc(url);
 			await wallet.getVersion();
-			console.log("Using existing wallet RPC at %s", url);
+			helper.log("Using existing wallet RPC at %s", url);
 		} catch {
-			console.log("Starting wallet RPC at %s", url);
+			helper.log("Starting wallet RPC at %s", url);
 			wallet = await monero.connectToWalletRpc([
 				binPath + "morelo-wallet-rpc" + execExt,
 				"--daemon-address", config.daemonURL || "http://localhost:38302",
@@ -56,7 +57,7 @@ export async function closeWallet(wallet) {
 		return;
 	}
 	if(wallet.getProcess()) {
-		await wallet.close(true).catch(ex => console.error("Can't save wallet:", ex));
+		await wallet.close(true).catch(ex => helper.err("Can't save wallet:", ex));
 		await wallet.stopProcess();
 	} else {
 		await wallet.save();

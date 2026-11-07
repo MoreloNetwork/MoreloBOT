@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { withdraw } from "../wallet.js";
+import { withdraw } from "../api/wallet.js";
 
 test("withdrawal uses the configured dev account mapping", async t => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-withdraw-"));

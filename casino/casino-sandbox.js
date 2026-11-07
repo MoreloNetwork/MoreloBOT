@@ -1,8 +1,8 @@
 import { randomUUID, randomInt } from "node:crypto";
-import { UserError } from "./command-utils.js";
+import { UserError } from "../core/command-utils.js";
 import { getBlockGuessPayout } from "./casino-block-game.js";
 import { resolveCoinflip, resolveRoulette, spinRoulette, tossCoin } from "./casino-games.js";
-import { parseMRL } from "./wallet.js";
+import { parseMRL } from "../api/wallet.js";
 
 function cardValue(card) {
 	return Math.min(card.rank, 10);
@@ -267,7 +267,17 @@ export default class CasinoSandbox {
 			} else {
 				await this.store.setBlackjack(userId, hand);
 			}
-			return { status: handValue(hand.player) > 21 ? "bust" : "playing", player: hand.player.map(formatCard), playerValue: handValue(hand.player) };
+			const busted = handValue(hand.player) > 21;
+			return {
+				status: busted ? "bust" : "playing",
+				player: hand.player.map(formatCard),
+				playerValue: handValue(hand.player),
+				...(busted ? {
+					dealer: hand.dealer.map(formatCard),
+					payout: "0",
+					balance: String(await this.store.getBalance(userId))
+				} : { dealerVisible: formatCard(hand.dealer[0]) })
+			};
 		});
 	}
 
