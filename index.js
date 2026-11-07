@@ -21,16 +21,18 @@ process.env.TZ = "UTC";
 process.title = "MoreloBOT";
 
 import monero from "monero-ts";
-import fetch from "node-fetch";
 import * as Eris from "eris";
 import fs from "node:fs/promises";
 import config from "./config.js";
 import helper from "./helper.js";
+import { UserError } from "./command-utils.js";
 import { getEmission, getMempool, getNetworkReport, getNetworkStats, formatHashrateValue, formatMempool } from "./features.js";
 import mentionCommand from "./mention.js";
 import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
 import WalletNotificationStore from "./wallet-notification-store.js";
 import { startWalletNotifications } from "./wallet-notifications.js";
+
+const fetch = globalThis.fetch;
 
 let daemon, wallet, bot, botAddon;
 let ownsWalletRpcProcess = false;
@@ -271,13 +273,13 @@ async function runMessageCommand(message, commandName, args, hide = false) {
 		return;
 	}
 	try {
-		const result = await command.run(message, found.name, args, hide, commandServices);
+			const result = await command.run(message, found.name, args, hide, commandServices);
 		if(typeof result === "string") {
-			await helper.reply(hide, message, result, undefined, bot);
+				await helper.reply(hide || command.hide_msg || command.hideMsg, message, result, undefined, bot);
 		}
 	} catch(ex) {
 		helper.err("Command " + found.name + ":", ex);
-		await helper.reply(hide, message, "Command failed; please try again.", undefined, bot).catch(replyError => {
+		await helper.reply(hide, message, ex instanceof UserError ? ex.message : "Command failed; please try again.", undefined, bot).catch(replyError => {
 			helper.err("Command response:", replyError);
 		});
 	}
@@ -365,17 +367,21 @@ bot.once("ready", async () => {
 						return;
 					}
 					const content = formatMempool(mempool, new Date(), 4000, config.explorerURL);
+					const txPoolMessage = {
+						content,
+						flags: Eris.Constants.MessageFlags.SUPPRESS_EMBEDS
+					};
 					const saved = await walletNotificationStore.getMessage("txpool");
 					let message;
 					if(saved?.channelId === channel.id) {
 						try {
-							message = await bot.editMessage(channel.id, saved.messageId, content);
+							message = await bot.editMessage(channel.id, saved.messageId, txPoolMessage);
 						} catch {
 						message = undefined;
 					}
 					}
 					if(!message) {
-						message = await bot.createMessage(channel.id, content);
+						message = await bot.createMessage(channel.id, txPoolMessage);
 						await walletNotificationStore.setMessage("txpool", {
 							channelId: channel.id,
 							messageId: message.id
@@ -508,7 +514,7 @@ bot.once("ready", async () => {
 		helper.err("Interaction:", ex);
 		if(!interaction.acknowledged) {
 			await interaction.createMessage({
-				content: "Command failed; please try again.",
+				content: ex instanceof UserError ? ex.message : "Command failed; please try again.",
 				flags: 64
 			}).catch(replyError => helper.err("Interaction response:", replyError));
 		}

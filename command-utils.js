@@ -1,4 +1,6 @@
-﻿export function getOption(interaction, name) {
+﻿export class UserError extends Error {}
+
+export function getOption(interaction, name) {
 	return interaction.data.options?.find(option => option.name === name)?.value;
 }
 

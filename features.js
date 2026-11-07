@@ -1,4 +1,6 @@
-﻿import fetch from "node-fetch";
+﻿import { formatMRL as formatWalletMRL } from "./wallet.js";
+
+const fetch = globalThis.fetch;
 
 const atomicUnits = 1000000000n;
 
@@ -24,20 +26,11 @@ function preventMentions(text) {
 }
 
 function formatMRL(amount, digits = 2) {
-	let value = BigInt(amount);
-	const negative = value < 0n;
-	if(negative) {
-		value = -value;
-	}
-	const scale = 10n ** BigInt(digits);
-	const rounded = (value * scale + atomicUnits / 2n) / atomicUnits;
-	const whole = rounded / scale;
-	const fraction = String(rounded % scale).padStart(digits, "0");
-	return (negative ? "-" : "") + whole + (digits ? "." + fraction : "") + " MRL";
+	return formatWalletMRL(amount, digits);
 }
 
 async function getJson(url, source) {
-	const response = await fetch(url);
+	const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
 	if(!response.ok) {
 		throw new Error(source + " returned HTTP " + response.status);
 	}
@@ -74,6 +67,20 @@ export async function getEmission(config) {
 }
 
 export async function getPrice(config) {
+	if(config.priceProvider) {
+		const name = config.priceProvider;
+		if(!/^[\w-]+$/.test(name)) {
+			throw new Error("Invalid price provider name: " + name);
+		}
+		const provider = await import("./price-providers/" + name + ".js");
+		const quote = await provider.default.getPrice(config);
+		return [
+			"Price: $" + quote.usd,
+			...(quote.volume24hUSD == null ? [] : [ "24h volume: $" + quote.volume24hUSD.toFixed(2) ]),
+			...(quote.change24h == null ? [] : [ "24h change: " + quote.change24h.toFixed(2) + "%" ]),
+			"Source: " + (provider.default.name || name)
+		];
+	}
 	if(!config.priceURL) {
 		return null;
 	}
@@ -95,7 +102,7 @@ export async function getPools(config) {
 		return null;
 	}
 
-	const page = await fetch(config.poolsPageURL);
+	const page = await fetch(config.poolsPageURL, { signal: AbortSignal.timeout(10000) });
 	if(!page.ok) {
 		throw new Error("MiningPoolStats returned HTTP " + page.status);
 	}

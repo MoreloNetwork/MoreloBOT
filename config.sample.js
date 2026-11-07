@@ -7,6 +7,7 @@ export default {
 	repoURL: "https://github.com/MoreloNetwork", // Repository URL
 	explorerURL: "https://explorer.morelo.cc", // Explorer URL
 	priceURL: "https://xeggex.com/api/v2/market/getbyid/643670143fef5ebc68e82471", // Market API URL
+	priceProvider: "", // File name from price-providers, empty to disable provider-based prices
 	poolsPageURL: "https://miningpoolstats.stream/morelo", // MiningPoolStats page URL
 	poolsDataURL: "https://data.miningpoolstats.stream/data/morelo.js", // MiningPoolStats data URL
 	daemonURL: "", // Daemon URL, creates new local instance if empty
