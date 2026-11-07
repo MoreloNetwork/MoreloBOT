@@ -4,7 +4,7 @@
   "description": "Morelo Network official Discord bot",
   "main": "index.js",
   "scripts": {
-    "test": "node .",
+    "test": "node --test",
     "start": "node ."
   },
   "author": "dmkng",
@@ -14,7 +14,12 @@
     "eris": "^0.17.2",
     "erlpack": "^0.1.4",
     "eventemitter3": "^5.0.1",
+<<<<<<< Updated upstream
     "monero-ts": "^0.9.7",
+=======
+    "monero-ts": "https://codeload.github.com/MoreloNetwork/monero-ts/tar.gz/7ea8cd036b2090ddaf5659eabf0db1f710faa3b0",
+    "node-fetch": "^3.3.2",
+>>>>>>> Stashed changes
     "zlib-sync": "^0.1.9"
   }
 }
