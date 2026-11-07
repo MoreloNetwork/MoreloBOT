@@ -26,6 +26,10 @@ listening on `127.0.0.1:walletRpcPort`, or starts one and stops it on shutdown.
 If the wallet RPC already has a wallet open, the bot uses that wallet;
 `walletName` and `walletPassword` are used only when it needs to open one.
 
+Users get a DM for every incoming transfer to their account, both tips and
+deposits. `notifications.json` in the wallets directory records which
+transfers were announced; on the first start existing transfers are skipped.
+
 ## Commands
 
 Slash commands are registered at startup. Message commands use the configured

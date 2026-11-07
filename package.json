@@ -4,7 +4,7 @@
   "description": "Morelo Network official Discord bot",
   "main": "index.js",
   "scripts": {
-    "test": "node .",
+    "test": "node --test",
     "start": "node ."
   },
   "author": "dmkng",
