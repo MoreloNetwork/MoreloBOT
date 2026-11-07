@@ -11,3 +11,6 @@ morelo*
 
 # Wallet account mapping
 wallets/users.json
+config.js
+
+.vs
