@@ -31,6 +31,14 @@ import mentionCommand from "./mention.js";
 import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
 import WalletNotificationStore from "./wallet-notification-store.js";
 import { startWalletNotifications } from "./wallet-notifications.js";
+import CasinoService from "./casino-service.js";
+import CasinoStore from "./casino-store.js";
+import CasinoBlockGame from "./casino-block-game.js";
+import CasinoBlockStore from "./casino-block-store.js";
+import CasinoSandbox from "./casino-sandbox.js";
+import CasinoSandboxStore from "./casino-sandbox-store.js";
+import CasinoSandboxBlockStore from "./casino-sandbox-block-store.js";
+import { formatMRL, parseMRL } from "./wallet.js";
 
 const fetch = globalThis.fetch;
 
@@ -39,6 +47,7 @@ let ownsWalletRpcProcess = false;
 let walletRpcProcess;
 let shutdownPromise;
 let walletNotificationService;
+let casinoBlockMonitor;
 const walletNotificationStore = new WalletNotificationStore(config.walletNotificationsPath);
 
 async function shutdown(reason, exitCode = 0) {
@@ -47,6 +56,9 @@ async function shutdown(reason, exitCode = 0) {
 	}
 	shutdownPromise = (async () => {
 		helper.log("Shutting down (%s)", reason);
+		if(casinoBlockMonitor) {
+			clearInterval(casinoBlockMonitor);
+		}
 		try {
 			await walletNotificationService?.stop();
 		} catch(ex) {
@@ -216,7 +228,127 @@ try {
 } catch(ex) {
 	helper.err("Commands:", ex);
 }
-const commandServices = { daemon, wallet, bot, config, commands: cmds, walletNotificationStore };
+async function publishCasinoWin(content, userIds) {
+	const channel = config.casinoWinsChannel && bot.getChannel(config.casinoWinsChannel);
+	if(!channel) {
+		return false;
+	}
+	await bot.createMessage(channel.id, {
+		content,
+		allowedMentions: { users: userIds }
+	});
+	return true;
+}
+const casinoStore = new CasinoStore(config.casinoWagersPath);
+const casino = new CasinoService({
+	wallet,
+	config,
+	store: casinoStore,
+	dependencies: {
+		onWin: async wager => {
+			const outcome = wager.game === "coinflip"
+				? wager.outcome
+				: wager.game === "roulette"
+					? wager.outcome.number + " " + wager.outcome.color
+					: wager.outcome;
+			await publishCasinoWin(
+				"<@" + wager.userId + "> won " + formatMRL(BigInt(wager.payout)) + " MRL in "
+					+ wager.game + " (" + outcome + "); wager `" + wager.id.slice(0, 8) + "`.",
+				[ wager.userId ]
+			);
+		}
+	}
+});
+const casinoBlockStore = new CasinoBlockStore(config.casinoBlockBetsPath);
+const casinoBlockGame = new CasinoBlockGame({
+	wallet,
+	daemon,
+	config,
+	store: casinoBlockStore,
+	dependencies: { serialize: operation => casino.serialize(operation) }
+});
+casino.blockGame = casinoBlockGame;
+const casinoSandboxStore = new CasinoSandboxStore(config.casinoSandboxPath, parseMRL(config.casinoSandboxInitialBalance || "1000").toString());
+const casinoSandboxBlockStore = new CasinoSandboxBlockStore(config.casinoSandboxBlockBetsPath);
+const casinoSandbox = new CasinoSandbox({
+	store: casinoSandboxStore,
+	blockStore: casinoSandboxBlockStore,
+	config,
+	daemon,
+	dependencies: {
+		onWin: async bet => {
+			await publishCasinoWin(
+				"[TEST] <@" + bet.userId + "> won " + formatMRL(BigInt(bet.payout)) + " test MRL in " + bet.game + ". No MRL transferred.",
+				[ bet.userId ]
+			);
+		}
+	}
+});
+const blockGame = config.casinoTestMode === true ? casinoSandbox : casinoBlockGame;
+const blockStore = config.casinoTestMode === true ? casinoSandboxBlockStore : casinoBlockStore;
+const commandServices = { daemon, wallet, bot, config, commands: cmds, walletNotificationStore, casino, casinoSandbox };
+
+async function checkCasinoBlocks() {
+	try {
+		const result = await blockGame.checkForNewBlocks();
+		for(const block of result.settledBlocks) {
+			const winners = block.bets.filter(bet => bet.won);
+			if(!winners.length) {
+				await blockStore.markBlockAnnounced(block.height);
+				continue;
+			}
+			const testPrefix = config.casinoTestMode === true ? "[TEST] " : "";
+			const content = testPrefix + "New Morelo block " + block.height + " (`" + block.hash + "`). "
+				+ "Winner(s): " + winners.map(bet => "<@" + bet.userId + "> guessed `" + bet.guess
+					+ "` and received " + formatMRL(BigInt(bet.payout)) + (config.casinoTestMode === true ? " test MRL" : " MRL")
+					+ (bet.payoutTxHash ? " (`" + bet.payoutTxHash + "`)" : "")).join("; ");
+			if(await publishCasinoWin(content, winners.map(bet => bet.userId))) {
+				await blockStore.markBlockAnnounced(block.height);
+			}
+		}
+	} catch(ex) {
+		helper.err("Casino block game:", ex);
+	}
+}
+
+const casinoGameGuides = {
+	coinflip: "🎲 Coinflip\nHow to play: `m!casino coinflip <heads|tails> <amount>`\nExample: `m!casino coinflip heads 0.01`\nWin pays 2x your stake.",
+	roulette: "🎰 Roulette\nHow to play: `m!casino roulette <red|black|0-36> <amount>`\nExamples: `m!casino roulette red 0.01`, `m!casino roulette 17 0.01`\nRed/black pays 2x; a number pays 36x.",
+	dice: "🎯 Dice\nHow to play: `m!casino dice <1-6> <amount>`\nExample: `m!casino dice 6 0.01`\nExact match pays 5.7x your stake.",
+	guessNextHash: "🧩 Guess the next hash\nHow to play: `m!casino guess <1-6 hex chars> <amount>`\nExample: `m!casino guess cdef 0.01`\nThe guess must match the end of the next block hash.",
+	blackjack: "🃏 Blackjack\nHow to play: `m!casino blackjack start <amount>`, then `blackjack hit` or `blackjack stand`\nExample: `m!casino blackjack start 0.01`\nNatural blackjack pays 2.5x; standard win pays 2x."
+};
+
+async function ensureCasinoGameInstructions() {
+	for(const [ game, channelId ] of Object.entries(config.casinoGameChannels || {})) {
+		if(!channelId || !casinoGameGuides[game]) {
+			continue;
+		}
+		const channel = bot.getChannel(channelId);
+		if(!channel) {
+			helper.warn("Casino game channel not found for %s: %s", game, channelId);
+			continue;
+		}
+		try {
+			const messages = await channel.getMessages(20).catch(() => []);
+			const existing = messages.find(message => typeof message.content === "string" && message.content.includes("Casino guide") && message.content.includes(game));
+			if(existing) {
+				if(!existing.pinned) {
+					await channel.pinMessage(existing.id);
+					helper.log("Pinned casino guide for %s in channel %s", game, channel.id);
+				} else {
+					helper.log("Casino guide for %s is already pinned in channel %s", game, channel.id);
+				}
+				continue;
+			}
+			const message = await channel.createMessage({ content: "**Casino guide: " + game + "**\n" + casinoGameGuides[game] + "\n\nTip: use the `m!casino` commands in this channel." });
+			await channel.pinMessage(message.id);
+			helper.log("Published and pinned casino guide for %s in channel %s", game, channel.id);
+		} catch(ex) {
+			helper.err("Casino channel instructions (%s):", game, ex);
+		}
+	}
+}
 const cooldowns = new Map();
 let mention;
 let statsInfo;
@@ -307,6 +439,13 @@ bot.once("ready", async () => {
 	} catch(ex) {
 		helper.err("Commands:", ex);
 	}
+	try {
+		await ensureCasinoGameInstructions();
+	} catch(ex) {
+		helper.err("Casino guides:", ex);
+	}
+	await checkCasinoBlocks();
+	casinoBlockMonitor = setInterval(checkCasinoBlocks, Math.max(1000, Number(config.casinoBlockPollInterval) || 5000));
 
 	const updateInfo = async () => {
 		try {
@@ -360,7 +499,12 @@ bot.once("ready", async () => {
 		if(!channel) {
 			helper.err("No transaction pool channel found with ID " + config.txPoolChannel);
 		} else {
+			let txPoolUpdateInProgress = false;
 			const updateTxPoolMessage = async () => {
+				if(txPoolUpdateInProgress) {
+					return;
+				}
+				txPoolUpdateInProgress = true;
 				try {
 					const mempool = await getMempool(config);
 					if(!mempool) {
@@ -373,12 +517,18 @@ bot.once("ready", async () => {
 					};
 					const saved = await walletNotificationStore.getMessage("txpool");
 					let message;
-					if(saved?.channelId === channel.id) {
+					if(saved?.channelId === channel.id && saved.messageId) {
 						try {
 							message = await bot.editMessage(channel.id, saved.messageId, txPoolMessage);
-						} catch {
-						message = undefined;
-					}
+						} catch(ex) {
+							if(ex && (ex.code === 10008 || ex.code === 10003 || ex.message?.includes("Unknown Message") || ex.message?.includes("Unknown Channel"))) {
+								await walletNotificationStore.setMessage("txpool", {});
+								message = undefined;
+							} else {
+								helper.warn("Tx-pool message edit failed, creating a replacement:", ex);
+								message = undefined;
+							}
+						}
 					}
 					if(!message) {
 						message = await bot.createMessage(channel.id, txPoolMessage);
@@ -389,11 +539,16 @@ bot.once("ready", async () => {
 					}
 				} catch(ex) {
 					helper.err("Transaction pool message:", ex);
+				} finally {
+					txPoolUpdateInProgress = false;
 				}
 			};
 			await updateTxPoolMessage();
 			setInterval(updateTxPoolMessage, Math.max(15000, Number(config.txPoolUpdateInterval) || 30000));
 		}
+
+
+
 	}
 
 	if(config.statsChannels) {

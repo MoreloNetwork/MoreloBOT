@@ -3,8 +3,10 @@
 function commandList(services) {
 	const commands = Object.entries(services.commands)
 		.filter(([, command]) => !command.admin_only && !command.adminOnly)
-		.map(([name, command]) => "`" + name + "` ÔÇö " + (command.description || "No description"));
-	return "**Command list**\n" + commands.join("\n")
+		.map(([name, command]) => "`" + name + "` - " + (command.description || "No description"));
+
+	const commandText = commands.length > 0 ? commands.join("\n") : "No public commands available.";
+	return "**Command list**\n" + commandText
 		+ "\n\nWebsite: <" + services.config.siteURL + ">\nGitHub: <" + (services.config.repoURL || "https://github.com/MoreloNetwork") + ">";
 }
 

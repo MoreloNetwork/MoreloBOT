@@ -46,12 +46,56 @@ commands the hidden response is sent as a direct message.
 - `tipall <amount>`: split MRL evenly among online human members of the server.
 - `withdraw <address> <amount|all>` (alias `transfer`): send MRL to an external
   address (always hidden). `all` sends the whole unlocked balance minus the fee.
+- `casino balance|history|block|guess|coinflip|roulette|dice`: inspect your wallet balance, current block round, history, or place a wager. Operators can use `blockpending` and `blockresolve` for unresolved block predictions.
 - `usage` (aliases `help`, `commands`), `ping`, `uptime`.
 
 Amounts accept up to 9 decimal places. Group tips are sent in a single transfer,
 so either every recipient is paid or none is; atomic units that can't be split
 evenly stay with the sender. Received MRL is locked for a few blocks before it
 can be sent again.
+
+## MRL Casino
+
+Casino wagers use real MRL from the existing tip wallet; there are no free
+starting tokens or daily grants. The initial games are `coinflip` (`heads` or
+`tails`) and European `roulette` (`red`, `black`, or a number from 0 to 36).
+Coinflip and color bets pay 2x the stake on a win; a winning roulette number
+pays 36x. The stake is transferred to the house account before any payout.
+
+Dice accepts a number from 1 to 6 and pays 5.7x the stake on an exact result.
+Blackjack is available in sandbox mode with `blackjack start <amount>`, followed
+by `blackjack hit` or `blackjack stand`; a natural blackjack pays 2.5x and a
+regular win pays 2x. The casino is disabled by default. Configure `casinoHouseAccountIndex`
+as a dedicated wallet account that is not mapped to a Discord user. Set
+`casinoEnabled` to `true` only after funding that account and checking that it
+can cover the largest configured payout plus `casinoFeeReserve`. Configure
+`casinoMinBet`, `casinoMaxBet`, and `casinoFeeReserve` conservatively; the
+sample values are only starting points, not a recommended bankroll.
+
+The wager ledger is stored at `casinoWagersPath`. If a wallet call or disk write
+leaves a wager in `needs_review`, the bot will not retry the transfer
+automatically. Do not replay the bet; an operator listed in
+`casinoAdminUserIds` must verify the wallet transaction and reconcile the wager.
+Operators can inspect open entries with `m!casino pending` or select "Review pending wagers"
+in the `/casino` slash command, then use `m!casino resolve <full-id> settled <verified-tx-hash>`
+or `m!casino resolve <full-id> void <refund-tx-hash|no-transfer-confirmed>`.
+Resolve only records the operator's decision; it never sends a transfer. Keep
+the wallet RPC private and back up the wager ledger with the wallet data.
+
+For the block game, use `m!casino block` to see predictions for the next block and
+`m!casino guess <1-6 hex characters> <amount>` to predict its hash suffix. A
+prediction is checked against the block hash when the daemon reports that block
+as mined. The provisional gross payout is `15 × 16^(n-1)` times the stake for
+`n` correctly guessed trailing hexadecimal characters (up to six); house funds
+must cover the full possible payout before a prediction is accepted. A user may
+place one prediction per round. Configure `casinoWinsChannel` to announce
+wins in the shared casino wins channel; rounds without winners are not posted.
+Each guess is a wager in the amount chosen by the user; the stake is transferred
+from that user's tip-wallet account to the casino house before the round settles.
+Block wagers and settlement state are stored at
+`casinoBlockBetsPath`, and the daemon is checked every `casinoBlockPollInterval`
+milliseconds. These payout rules are initial defaults and should be reviewed
+before enabling real-MRL casino wagers.
 
 ## Statistics
 
