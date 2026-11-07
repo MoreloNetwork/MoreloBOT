@@ -4,14 +4,14 @@ Morelo Network Discord bot.
 
 ## Setup
 
-1. Install Node.js 20 or later and run `npm install`.
+1. Install Node.js 20 or later and run `pnpm install`.
 2. Copy `config.sample.js` to `config.js`.
 3. Configure both Discord bot tokens, the daemon and wallet RPC endpoints (or
    local binaries), and the wallet directory/name/password. For a local wallet
    RPC, set `walletRpcPort` as needed.
 4. In the Discord Developer Portal, enable the privileged Message Content,
    Server Members and Presence intents.
-5. Start the bot with `npm start`.
+5. Start the bot with `pnpm start`.
 
 ## Wallet
 
