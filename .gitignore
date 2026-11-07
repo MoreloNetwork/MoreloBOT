@@ -4,6 +4,7 @@ package-lock.json
 pnpm-lock.yaml
 yarn.lock
 screenlog.0
+.vs
 config.js
 
 # Morelo binaries

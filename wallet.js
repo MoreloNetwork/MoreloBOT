@@ -86,12 +86,23 @@ async function loadAccounts(wallet) {
 	return accounts;
 }
 
-export async function getUserAccount(wallet, userId) {
+function getAccounts(wallet) {
 	accountsPromise ??= loadAccounts(wallet).catch(ex => {
 		accountsPromise = undefined;
 		throw ex;
 	});
-	const accounts = await accountsPromise;
+	return accountsPromise;
+}
+
+/**
+ * Returns a map of wallet account indices to Discord user IDs.
+ */
+export async function getAccountUsers(wallet) {
+	return new Map([ ...await getAccounts(wallet) ].map(([ userId, accountIndex ]) => [ accountIndex, userId ]));
+}
+
+export async function getUserAccount(wallet, userId) {
+	const accounts = await getAccounts(wallet);
 	const key = String(userId);
 	if(accounts.has(key)) {
 		return accounts.get(key);

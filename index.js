@@ -28,16 +28,18 @@ import helper from "./helper.js";
 import { UserError, parseRoleId, parseUserId } from "./command-utils.js";
 import { difficultyToHashrate, getEmission, getNetworkReport, getNetworkStats, getPrice } from "./features.js";
 import mentionResponse from "./mention.js";
+import { startNotifications } from "./notifications.js";
 import { closeWallet, connectWallet } from "./wallet.js";
 
 const EPHEMERAL = Eris.Constants.MessageFlags.EPHEMERAL;
 
-let daemon, wallet, bot;
+let daemon, wallet, bot, notifications;
 let shutdownPromise;
 
 function shutdown(reason, exitCode = 0) {
 	shutdownPromise ??= (async () => {
 		helper.log("Shutting down (%s)", reason);
+		notifications?.stop();
 		bot?.disconnect({ reconnect: false });
 		await closeWallet(wallet).catch(ex => {
 			helper.err("Can't stop wallet RPC:", ex);
@@ -113,6 +115,11 @@ for(const file of await fs.readdir(new URL("./commands", import.meta.url))) {
 		const command = (await import("./commands/" + file)).default;
 		commands[name] = command;
 		for(const alias of [ name, ...(command.aliases || []) ]) {
+			// Discord rejects the whole registration if two slash commands share a name
+			if(commandAliases[alias]) {
+				helper.warn("Command %s: %s is already used by %s", name, alias, commandAliases[alias]);
+				continue;
+			}
 			commandAliases[alias] = name;
 			// Every slash command also has a variant ending with "d" that hides the response
 			for(const hidden of [ false, true ]) {
@@ -372,6 +379,7 @@ bot.once("ready", async () => {
 		helper.err("Can't register slash commands:", ex);
 	}
 	startStatistics();
+	notifications = startNotifications(wallet, bot, config);
 }).on("error", ex => {
 	helper.err("Discord:", ex);
 }).on("warn", msg => {
