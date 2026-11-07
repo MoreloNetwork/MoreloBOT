@@ -7,7 +7,8 @@ const initialState = () => ({
 	lastScannedHeight: 0,
 	tips: {},
 	notifications: {},
-	preferences: {}
+	preferences: {},
+	messages: {}
 });
 
 export default class WalletNotificationStore {
@@ -36,6 +37,9 @@ export default class WalletNotificationStore {
 							: {},
 						preferences: saved.preferences && typeof saved.preferences === "object"
 							? saved.preferences
+							: {},
+						messages: saved.messages && typeof saved.messages === "object"
+							? saved.messages
 							: {}
 					};
 				} catch(ex) {
@@ -149,6 +153,19 @@ export default class WalletNotificationStore {
 			tips: this.state.preferences[String(userId)]?.tips !== false,
 			transfers: this.state.preferences[String(userId)]?.transfers !== false
 		};
+	}
+
+	async getMessage(key) {
+		await this.load();
+		const message = this.state.messages[key];
+		return message ? { ...message } : undefined;
+	}
+
+	async setMessage(key, message) {
+		await this.load();
+		this.state.messages[key] = { ...message };
+		await this.save();
+		return { ...this.state.messages[key] };
 	}
 
 	async setNotificationPreferences(userId, preferences) {

@@ -21,6 +21,8 @@ export default {
 	legacyAddressesPath: "addresses.json", // Existing Python bot user address database
 	statsTextChannel: "", // Optional text channel for network, market, and pool statistics
 	statsUpdateInterval: 60000, // Statistics message update interval in milliseconds
+	txPoolChannel: "", // Optional channel ID for the live transaction pool message
+	txPoolUpdateInterval: 30000, // Transaction pool refresh interval in milliseconds
 	statsChannels: { // Channel IDs for displaying statistics
 		hashrate: "",
 		height: "",

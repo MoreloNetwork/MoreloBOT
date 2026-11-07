@@ -116,6 +116,75 @@ export async function getPools(config) {
 		.sort((left, right) => Number(right.hashrate) - Number(left.hashrate));
 }
 
+export async function getMempool(config) {
+	if(!config.explorerURL) {
+		return null;
+	}
+	const body = await getJson(config.explorerURL.replace(/\/$/, "") + "/api/mempool", "Explorer mempool API");
+	if(body.status !== "success" || !Array.isArray(body.data?.txs)) {
+		throw new Error("Explorer returned an invalid mempool response");
+	}
+	return {
+		transactions: body.data.txs.filter(tx => tx && typeof (tx.tx_hash || tx.hash) === "string"),
+		total: Number.isFinite(Number(body.data.txs_no)) ? Number(body.data.txs_no) : body.data.txs.length
+	};
+}
+
+function formatAtomicAmount(amount) {
+	if(amount == null || !/^\d+$/.test(String(amount))) {
+		return null;
+	}
+	const value = BigInt(amount);
+	return (value / atomicUnits) + "." + String(value % atomicUnits).padStart(9, "0") + " MRL";
+}
+
+export function formatMempool(mempool, updatedAt = new Date(), maxLength = 4000, explorerURL = "") {
+	const transactions = mempool?.transactions || [];
+	const timestamp = Math.floor(new Date(updatedAt).getTime() / 1000);
+	const count = mempool?.total ?? transactions.length;
+	const footer = "\n\n_Last updated: <t:" + timestamp + ":F> (<t:" + timestamp + ":R>)_";
+	const lines = [
+		"## Transaction Pool",
+		"**" + count + "** pending transaction" + (count === 1 ? "" : "s")
+	];
+	if(transactions.length === 0) {
+		lines.push("\n*The pool is currently empty.*");
+	} else {
+		let shown = 0;
+		for(const tx of transactions) {
+			const hash = tx.tx_hash || tx.hash;
+			if(typeof hash !== "string") {
+				continue;
+			}
+			const transactionLink = explorerURL
+				? "[" + hash + "](" + explorerURL.replace(/\/$/, "") + "/tx/" + encodeURIComponent(hash) + ")"
+				: "`" + hash + "`";
+			const details = [ transactionLink ];
+			const amount = formatAtomicAmount(tx.amount_out ?? tx.amount);
+			const fee = formatAtomicAmount(tx.fee);
+			if(amount) {
+				details.push("Amount: **" + amount + "**");
+			}
+			if(fee) {
+				details.push("Fee: " + fee);
+			}
+			const line = "\n" + details.join(" | ");
+			const suffix = "\n_Additional transactions omitted._";
+			if(lines.join("\n").length + line.length + suffix.length + footer.length > maxLength) {
+				lines.push("_Additional transactions omitted._");
+				break;
+			}
+			lines.push(line.trimStart());
+			shown++;
+		}
+		if(shown === 0) {
+			lines.push("\n*No transaction details available from the explorer.*");
+		}
+	}
+	lines.push(footer);
+	return lines.join("\n");
+}
+
 export async function getNetworkReport(daemon, config) {
 	const network = await getNetworkStats(daemon);
 	const [ emission, price, pools ] = await Promise.all([

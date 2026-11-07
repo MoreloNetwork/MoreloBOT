@@ -26,7 +26,7 @@ import * as Eris from "eris";
 import fs from "node:fs/promises";
 import config from "./config.js";
 import helper from "./helper.js";
-import { getEmission, getNetworkReport, getNetworkStats, formatHashrateValue } from "./features.js";
+import { getEmission, getMempool, getNetworkReport, getNetworkStats, formatHashrateValue, formatMempool } from "./features.js";
 import mentionCommand from "./mention.js";
 import { connectWalletRpc, stopOwnedWalletRpc } from "./wallet-rpc.js";
 import WalletNotificationStore from "./wallet-notification-store.js";
@@ -350,6 +350,43 @@ bot.once("ready", async () => {
 			};
 			await updateTextStats();
 			setInterval(updateTextStats, Math.max(60000, Number(config.statsUpdateInterval) || 60000));
+		}
+	}
+
+	if(config.txPoolChannel) {
+		const channel = bot.getChannel(config.txPoolChannel);
+		if(!channel) {
+			helper.err("No transaction pool channel found with ID " + config.txPoolChannel);
+		} else {
+			const updateTxPoolMessage = async () => {
+				try {
+					const mempool = await getMempool(config);
+					if(!mempool) {
+						return;
+					}
+					const content = formatMempool(mempool, new Date(), 4000, config.explorerURL);
+					const saved = await walletNotificationStore.getMessage("txpool");
+					let message;
+					if(saved?.channelId === channel.id) {
+						try {
+							message = await bot.editMessage(channel.id, saved.messageId, content);
+						} catch {
+						message = undefined;
+					}
+					}
+					if(!message) {
+						message = await bot.createMessage(channel.id, content);
+						await walletNotificationStore.setMessage("txpool", {
+							channelId: channel.id,
+							messageId: message.id
+						});
+					}
+				} catch(ex) {
+					helper.err("Transaction pool message:", ex);
+				}
+			};
+			await updateTxPoolMessage();
+			setInterval(updateTxPoolMessage, Math.max(15000, Number(config.txPoolUpdateInterval) || 30000));
 		}
 	}
 
