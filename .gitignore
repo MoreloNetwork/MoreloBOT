@@ -5,3 +5,4 @@ morelo*
 .vs
 .github
 wallets
+*.log
