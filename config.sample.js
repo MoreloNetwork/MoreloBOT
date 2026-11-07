@@ -6,7 +6,7 @@ export default {
 	siteURL: "https://morelonetwork.pl", // Website URL
 	repoURL: "https://github.com/MoreloNetwork", // Repository URL
 	explorerURL: "https://explorer.morelonetwork.pl", // Explorer URL
-	priceProvider: "coingecko", // File name from price-providers, empty to disable prices
+	priceProvider: "", // File name from price-providers, empty to disable prices
 	poolsPageURL: "https://miningpoolstats.stream/morelo", // MiningPoolStats page URL
 	poolsDataURL: "https://data.miningpoolstats.stream/data/morelo.js", // MiningPoolStats data URL
 	daemonURL: "", // Daemon URL, creates new local instance if empty

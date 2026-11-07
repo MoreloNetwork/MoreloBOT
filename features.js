@@ -1,4 +1,3 @@
-import fetch from "node-fetch";
 import { formatMRL } from "./wallet.js";
 
 const priceProviders = new Map();
@@ -22,7 +21,7 @@ export function difficultyToHashrate(difficulty) {
 }
 
 async function getJson(url, source) {
-	const response = await fetch(url);
+	const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
 	if(!response.ok) {
 		throw new Error(source + " returned HTTP " + response.status);
 	}
@@ -58,6 +57,8 @@ export async function getEmission(config) {
 
 /**
  * Returns the configured price provider's quote, or null when none is configured.
+ * A provider is price-providers/<name>.js exporting { name, async getPrice(config) },
+ * where getPrice resolves to { usd, volume24hUSD?, change24h? } (numbers) and throws on failure.
  */
 export async function getPrice(config) {
 	const name = config.priceProvider;
@@ -91,7 +92,7 @@ export async function getPools(config) {
 		return null;
 	}
 
-	const page = await fetch(config.poolsPageURL);
+	const page = await fetch(config.poolsPageURL, { signal: AbortSignal.timeout(10000) });
 	if(!page.ok) {
 		throw new Error("MiningPoolStats returned HTTP " + page.status);
 	}

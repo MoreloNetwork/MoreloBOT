@@ -57,5 +57,5 @@ message, and `statsChannels` to show single values as channel names.
 Prices come from the provider named by `priceProvider`, a module in
 `price-providers/` (empty disables prices). To add a provider, create
 `price-providers/<name>.js` exporting `{ name, async getPrice(config) }`, where
-`getPrice` resolves to `{ usd, volume24hUSD?, change24h? }`; see
-`price-providers/coingecko.js`.
+`getPrice` resolves to `{ usd, volume24hUSD?, change24h? }` (numbers) and
+throws on failure.
