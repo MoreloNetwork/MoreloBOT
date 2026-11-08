@@ -25,7 +25,7 @@ export default class CasinoBlockStore {
 					this.state = initial();
 				}
 				return this.state;
-			})().catch(ex => { this.loadPromise = undefined; throw ex; });
+			})();
 		}
 		return this.loadPromise;
 	}

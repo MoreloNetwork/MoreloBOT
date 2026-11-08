@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { MoneroWalletListener } from "monero-ts";
-import WalletNotificationStore from "./wallet-notification-store.js";
 import { formatWalletBalance, getUserIdsByAccount } from "./wallet-users.js";
 
 const statusLabels = {

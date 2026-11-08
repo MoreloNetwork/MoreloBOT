@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import WalletNotificationStore from "../api/wallet-notification-store.js";
+import WalletNotificationStore from "../api/wallet-notification-store-legacy.js";
 import {
 	getIncomingTransferKey,
 	getTransferStatus,

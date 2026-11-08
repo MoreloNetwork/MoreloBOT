@@ -30,17 +30,18 @@ import { UserError } from "./core/command-utils.js";
 import { getEmission, getMempool, getNetworkReport, getNetworkStats, formatHashrateValue, formatMempool } from "./api/features.js";
 import mentionCommand from "./core/mention.js";
 import { connectWalletRpc, stopOwnedWalletRpc } from "./api/wallet-rpc.js";
-import WalletNotificationStore from "./api/wallet-notification-store.js";
+import WalletNotificationStore from "./api/wallet-notification-store-legacy.js";
 import { startWalletNotifications } from "./api/wallet-notifications.js";
 import CasinoService from "./casino/casino-service.js";
-import CasinoStore from "./casino/casino-store.js";
+import CasinoStore from "./casino/casino-store-legacy.js";
 import CasinoDatabase, { hasCasinoPostgres } from "./casino/casino-db.js";
 import CasinoPostgresStore from "./casino/casino-postgres-store.js";
 import CasinoBlockGame from "./casino/casino-block-game.js";
-import CasinoBlockStore from "./casino/casino-block-store.js";
+import CasinoBlockStore from "./casino/casino-block-store-legacy.js";
 import CasinoSandbox from "./casino/casino-sandbox.js";
-import CasinoSandboxStore from "./casino/casino-sandbox-store.js";
-import CasinoSandboxBlockStore from "./casino/casino-sandbox-block-store.js";
+import CasinoSandboxStore from "./casino/casino-sandbox-store-legacy.js";
+import CasinoSandboxBlockStore from "./casino/casino-sandbox-block-store-legacy.js";
+import { startPostgresBackupScheduler } from "./casino/postgres-backup.js";
 import { formatMRL, parseMRL } from "./api/wallet.js";
 import { ensureCasinoGuide, loadCasinoGuideMessageIds, saveCasinoGuideMessageIds } from "./core/casino-guides.js";
 import publishCasinoWinMessage from "./core/casino-win-publisher.js";
@@ -58,6 +59,7 @@ let shutdownPromise;
 let walletNotificationService;
 let casinoDatabase;
 let casinoBlockMonitor;
+let postgresBackupScheduler;
 const instanceLockPath = path.join(process.cwd(), "wallets", ".morelobot.lock");
 let hasInstanceLock = false;
 const walletNotificationStore = new WalletNotificationStore(config.walletNotificationsPath);
@@ -93,6 +95,12 @@ async function shutdown(reason, exitCode = 0) {
 		helper.log("Shutting down (%s)", reason);
 		if(casinoBlockMonitor) {
 			clearInterval(casinoBlockMonitor);
+		}
+		try {
+			postgresBackupScheduler?.stop?.();
+		} catch(ex) {
+			helper.err("Can't stop PostgreSQL backup scheduler:", ex);
+			exitCode ||= 1;
 		}
 		try {
 			await walletNotificationService?.stop();
@@ -315,6 +323,15 @@ const casinoStore = hasCasinoPostgres(config)
 	? await (async () => {
 		casinoDatabase = new CasinoDatabase({ connectionString: config.casinoPostgresUrl });
 		await casinoDatabase.runMigrations(helper);
+		postgresBackupScheduler = startPostgresBackupScheduler({
+			enabled: config.casinoPostgresBackupEnabled !== false,
+			connectionString: config.casinoPostgresUrl,
+			backupDir: config.casinoPostgresBackupDir || path.join(config.walletsPath || "wallets", "postgres-backups"),
+			intervalMs: Number(config.casinoPostgresBackupIntervalMs) || 24 * 60 * 60 * 1000,
+			retentionDays: Number(config.casinoPostgresBackupRetentionDays) || 14,
+			pgDumpPath: config.casinoPostgresPgDumpPath || "",
+			logger: helper
+		});
 		helper.log("Casino PostgreSQL enabled.");
 		return new CasinoPostgresStore(casinoDatabase);
 	})()

@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import CasinoSandbox from "../casino/casino-sandbox.js";
-import CasinoSandboxStore from "../casino/casino-sandbox-store.js";
-import CasinoSandboxBlockStore from "../casino/casino-sandbox-block-store.js";
+import CasinoSandboxStore from "../casino/casino-sandbox-store-legacy.js";
+import CasinoSandboxBlockStore from "../casino/casino-sandbox-block-store-legacy.js";
 
 function createSandbox(randomValues) {
 	const state = { balance: 1_000_000_000_000n, blackjack: undefined, bets: [] };

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import WalletNotificationStore from "../api/wallet-notification-store.js";
+import WalletNotificationStore from "../api/wallet-notification-store-legacy.js";
 
 test("tip metadata, notifications, and scan progress survive reopening the store", async t => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "morelobot-store-"));

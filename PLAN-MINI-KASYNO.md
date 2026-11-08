@@ -9,8 +9,8 @@ Udostępnić na serwerze Discord proste gry z zakładami w MRL pobieranymi z ist
 - Dostępne gry: rzut monetą (`heads`/`tails`), europejska ruletka (`red`/`black`/`0–36`) oraz typowanie końcowych znaków hasha bloku Morelo.
 - Komenda `casino` obsługuje komendy tekstowe i slash commands; odpowiedzi są prywatne.
 - Wyniki losuje `node:crypto`; wygrane zwracają brutto 2x stawki dla monety/koloru i 36x dla numeru.
-- Wager jest zapisywany przed transferem w pliku JSON, a niejednoznaczne transakcje nie są ponawiane automatycznie. Operatorzy z allowlisty mogą przeglądać i rozstrzygać wpisy.
-- Pełny zestaw testów przechodzi: 37/37.
+- Wager jest zapisywany przed transferem; aktualnie dostępne są dwa backendy persistence: plik JSON (fallback) albo PostgreSQL po ustawieniu `casinoPostgresUrl`. Niejednoznaczne transakcje nie są ponawiane automatycznie. Operatorzy z allowlisty mogą przeglądać i rozstrzygać wpisy.
+- Pełny zestaw testów przechodzi: 80/80 (`node --test`, audyt lokalny).
 - Kasyno jest wyłączone. Lokalna konfiguracja nie ma włącznika ani konta house, więc nie są wykonywane zakłady.
 - Gra blokowa zapisuje typy i rozliczenia w `casinoBlockBetsPath` oraz monitoruje wysokość daemon RPC. Wygrane ze wszystkich gier mają trafiać do wspólnego kanału `casinoWinsChannel`. Każdy typ jest zakładem o kwocie wybranej przez użytkownika i pobieranej z jego portfela tipów.
 - Obecny prototyp nadal ma `casinoMaxBet`; trzeba usunąć stały limit przed wdrożeniem decyzji o grze bez maksymalnej stawki.
@@ -54,3 +54,50 @@ Udostępnić na serwerze Discord proste gry z zakładami w MRL pobieranymi z ist
 1. Jaki bankroll i rezerwę płynności/opłat przeznaczyć na house? Maksymalna wypłata dla pojedynczej liczby w ruletce wynosi 36x stawki.
 2. Jaką retencję kopii ustawić w `D:\pulpit\morelo\backups\`? Backup ma być wykonywany raz dziennie.
 3. Puste hasło jest decyzją na etap lokalny; przed użyciem prawdziwych środków należy ustalić wymagane zabezpieczenia.
+
+## Audyt przed pełnym wdrożeniem (2026-11-08)
+
+### Co jest już gotowe
+
+- Testy automatyczne przechodzą w całości: 80/80.
+- Dodano integrację PostgreSQL dla wagerów (`casinoPostgresUrl`) wraz z runnerem migracji (`migrations/casino`).
+- Dodano tabele dla wagerów, transferów stake/payout i audytu rozstrzygnięć operatorskich.
+- W trybie testowym kasyna mogą grać zwykli użytkownicy (akcje operatorskie nadal tylko dla adminów).
+- Dla gry `guess the hash` komenda `block` pokazuje już podsumowanie poprzedniej rundy: hash bloku, ostatnie 6 znaków, typy i wynik (kto wygrał/przegrał).
+- Wiadomość `tx-pool` jest utrwalana i przypinana, a bot odzyskuje jej ID po restarcie.
+- Dodano blokadę jednej instancji procesu (lockfile), aby uniknąć dublowania wiadomości przez równoległe uruchomienia.
+- Kasyno nadal pozostaje domyślnie wyłączone (`casinoEnabled: false`), co ogranicza ryzyko przed produkcją.
+
+### Co zostało do naprawienia przed pełnym wdrożeniem
+
+1. **Etap 1 (blokujące): osobny wallet-RPC dla house nie jest wdrożony**
+   - Nadal używany jest `casinoHouseAccountIndex` w tym samym wallet-RPC co tipy.
+   - Brak uruchamiania i kontrolowanego zamykania drugiej instancji wallet-RPC dla `wallets/bank` na porcie `38305`.
+
+2. **Etap 2 (do domknięcia): pełna serializacja danych kasyna do PostgreSQL**
+   - Gra blokowa nadal zapisuje dane do JSON (`casinoBlockBetsPath`), nie do PostgreSQL.
+   - Brak migracji/warstwy DB dla round/block betów, jeśli mają być objęte tym samym źródłem prawdy.
+
+3. **Etap 3 (blokujące): backup PostgreSQL nie jest wdrożony**
+   - Brak `scripts/backup-casino-db.ps1` z `pg_dump`, harmonogramem codziennym, retencją i testem odtworzenia.
+
+4. **Etap 4 (blokujące): settlement nie jest przeniesiony na dwa wallet-RPC**
+   - Stake i payout nadal wykonuje ten sam wallet-RPC.
+   - Brakuje docelowego przepływu: stake z walleta tipów → house wallet bankowy; payout z house walleta.
+
+5. **Zasada bez stałego max beta nie jest spełniona**
+   - `casinoMaxBet` jest nadal aktywnie wymagany w logice (`casino-service`, `casino-sandbox`, konfiguracja).
+   - Przed produkcją trzeba usunąć stały limit i zostawić wyłącznie kontrolę wypłacalności gracza i house.
+
+6. **Etap 5 (do wykonania po zmianach settlementu)**
+   - Brak rozszerzonych testów integracyjnych pod dwa wallet-RPC, restarty w stanach pośrednich, timeouty i ręczne uzgadnianie po awarii.
+
+### Rekomendowana kolejność dalszych prac
+
+1. Wdrożyć **osobny wallet-RPC house** (etap 1) i domknąć jego realne użycie w runtime (nie tylko konfigurację).
+2. Przenieść **settlement na dwa wallet-RPC** i usunąć `casinoMaxBet` (etap 4 + zasady wypłacalności bez stałego limitu).
+3. Domknąć **PostgreSQL dla danych blokowych** (`casinoBlockBetsPath` -> DB) wraz z migracjami i odczytami historii rund.
+4. Dodać i przetestować **codzienny backup PostgreSQL** (`scripts/backup-casino-db.ps1`, retencja, test odtworzenia).
+5. Rozszerzyć testy integracyjne pod dwa wallet-RPC (restarty, timeouty, idempotencja, ręczne uzgadnianie).
+6. Wykonać próbę stagingową end-to-end z małym bankrolliem i ograniczoną allowlistą.
+7. Dopiero po tym rozważyć uruchomienie produkcyjne (etap 7).

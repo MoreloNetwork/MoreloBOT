@@ -52,10 +52,7 @@ export default class WalletNotificationStore {
 					this.state = initialState();
 				}
 				return this.state;
-			})().catch(ex => {
-				this.loadPromise = undefined;
-				throw ex;
-			});
+			})();
 		}
 		return this.loadPromise;
 	}
