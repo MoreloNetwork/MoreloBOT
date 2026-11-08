@@ -50,7 +50,7 @@ commands the hidden response is sent as a direct message.
 - `tipall <amount>`: split MRL evenly among online human members of the server.
 - `withdraw <address> <amount|all>` (alias `transfer`): send MRL to an external
   address (always hidden). `all` sends the whole unlocked balance minus the fee.
-- `casino balance|history|block|guess|coinflip|roulette|dice`: inspect your wallet balance, current block round, history, or place a wager. Operators can use `blockpending` and `blockresolve` for unresolved block predictions.
+- `casino balance|history|block|guess|coinflip|roulette|dice`: inspect your wallet balance, current block round, history, or place a wager. Game commands also have direct forms such as `m!dice <1-6> <amount>`, `m!coinflip <heads|tails> <amount>`, `m!roulette <pick> <amount>`, and `m!blackjack start <amount>`. Use each game only in its configured game channel; the bot points to that channel if a command is sent elsewhere. Operators can use `blockpending` and `blockresolve` for unresolved block predictions.
 - `usage` (aliases `help`, `commands`), `ping`, `uptime`.
 
 Amounts accept up to 9 decimal places. Group tips are sent in a single transfer,
@@ -86,20 +86,33 @@ or `m!casino resolve <full-id> void <refund-tx-hash|no-transfer-confirmed>`.
 Resolve only records the operator's decision; it never sends a transfer. Keep
 the wallet RPC private and back up the wager ledger with the wallet data.
 
-For the block game, use `m!casino block` to see predictions for the next block and
-`m!casino guess <1-6 hex characters> <amount>` to predict its hash suffix. A
-prediction is checked against the block hash when the daemon reports that block
-as mined. The provisional gross payout is `15 × 16^(n-1)` times the stake for
+For the block game, use `m!guess <1-6 hex characters> <amount>` to predict the
+next top block's hash suffix. Use it in the configured guess channel. A
+prediction is checked as soon as the daemon reports that block as the new top.
+At that round transition the bot settles all predictions, clears non-pinned
+messages from the game channel while keeping the pinned instructions, and posts
+the previous round's guesses/results together with the new round's target height.
+Only the guess channel is cleared; its pinned instructions and shared wins channel
+are preserved.
+You may place multiple predictions in the same round, including
+multiple predictions as one user. Winners are posted in the shared wins channel
+after the target block hash is available and payouts have been processed. The
+provisional gross payout is `15 × 16^(n-1)` times the stake for
 `n` correctly guessed trailing hexadecimal characters (up to six); house funds
-must cover the full possible payout before a prediction is accepted. A user may
-place one prediction per round. Configure `casinoWinsChannel` to announce
-wins in the shared casino wins channel; rounds without winners are not posted.
+must cover the full possible payout before a prediction is accepted. Configure
+`casinoWinsChannel` to announce wins in the shared casino wins channel; rounds
+without winners are not posted.
 Each guess is a wager in the amount chosen by the user; the stake is transferred
 from that user's tip-wallet account to the casino house before the round settles.
 Block wagers and settlement state are stored at
 `casinoBlockBetsPath`, and the daemon is checked every `casinoBlockPollInterval`
 milliseconds. These payout rules are initial defaults and should be reviewed
 before enabling real-MRL casino wagers.
+
+When `casinoLeaderboardChannel` is configured, the bot maintains a leaderboard
+with the top 10 users by total gross payouts, largest single payout, and total
+lost stakes. Only settled real-MRL wagers are included; sandbox results are not
+mixed into the real-currency ranking.
 
 ## Statistics
 

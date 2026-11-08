@@ -50,15 +50,34 @@ async function animateRoulette(bot, channel, result, testMode, logger) {
 }
 
 function formatBlockRound(round) {
-	if(!round.bets.length) {
-		return "Block " + round.height + " has no predictions yet.";
-	}
-	return (round.testMode ? "TEST block " : "Block ") + round.height + " predictions:\n" + round.bets
+	const bets = (round.bets || [])
 		.filter(bet => [ "open", "settled", "needs_review", "payout_submitting" ].includes(bet.status))
-		.slice(0, 15)
-		.map(bet => "`" + bet.guess + "` — " + formatMRL(BigInt(bet.stake))
-			+ (bet.status === "settled" ? (bet.won ? "; won " + formatMRL(BigInt(bet.payout)) : "; lost") : "; " + bet.status))
-		.join("\n");
+		.slice(0, 15);
+	const lines = [
+		bets.length
+			? (round.testMode ? "TEST block " : "Block ") + round.height + " predictions:\n" + bets
+				.map(bet => "`" + bet.guess + "` — " + formatMRL(BigInt(bet.stake))
+					+ (bet.status === "settled" ? (bet.won ? "; won " + formatMRL(BigInt(bet.payout)) : "; lost") : "; " + bet.status))
+				.join("\n")
+			: "Block " + round.height + " has no predictions yet."
+	];
+	if(round.previousRound?.hash) {
+		const previousBets = (round.previousRound.bets || []).slice(0, 25);
+		lines.push(
+			"",
+			(round.testMode ? "TEST " : "") + "Previous round " + round.previousRound.height + ":",
+			"Block hash: `" + round.previousRound.hash + "`",
+			"Last 6 chars: `" + round.previousRound.hashSuffix + "`"
+		);
+		if(previousBets.length) {
+			lines.push(
+				"Predictions:",
+				...previousBets.map(bet => "<@" + bet.userId + "> guessed `" + bet.guess + "` (" + formatMRL(BigInt(bet.stake)) + ") — "
+					+ (bet.status === "settled" ? (bet.won ? "won" : "lost") : bet.status))
+			);
+		}
+	}
+	return lines.join("\n");
 }
 
 export function formatPlay(result) {
@@ -76,11 +95,12 @@ export function formatPlay(result) {
 }
 
 async function runCasino(userId, action, args, casino, sandbox, context) {
+	const testMode = casino.config?.casinoTestMode === true;
 	const adminIds = Array.isArray(casino.config?.casinoAdminUserIds) ? casino.config.casinoAdminUserIds.map(String) : [];
-	if(!adminIds.includes(String(userId))) {
+	const isAdmin = adminIds.includes(String(userId));
+	if(!testMode && !isAdmin) {
 		return "Casino is currently restricted to configured administrators.";
 	}
-	const testMode = casino.config?.casinoTestMode === true;
 	if(testMode && action === "coinflip") {
 		const [ selection, amount ] = args;
 		if(!selection || !amount) return "Usage: `m!casino coinflip <heads|tails> <test amount>`.";
@@ -176,12 +196,18 @@ async function runCasino(userId, action, args, casino, sandbox, context) {
 			+ (result.balance ? "; test balance " + formatMRL(BigInt(result.balance)) : "") + ". No MRL was transferred.";
 	}
 	if(action === "blockpending" && testMode) {
+		if(!isAdmin) {
+			return "This sandbox action is available only to configured administrators.";
+		}
 		const bets = (await (testMode ? sandbox.getOpenBets(userId) : casino.blockGame.getOpenBets(userId))).slice(0, 10);
 		return bets.length
 			? bets.map(bet => "`" + bet.id + "` " + (testMode ? "TEST " : "") + "block " + bet.targetHeight + " <@" + bet.userId + "> `" + bet.guess + "` — " + bet.status).join("\n")
 			: "No block predictions need review.";
 	}
 	if(action === "blockresolve" && testMode) {
+		if(!isAdmin) {
+			return "This sandbox action is available only to configured administrators.";
+		}
 		const [ betId, resolution, proof ] = args;
 		if(!betId || !resolution || !proof) {
 			return "Usage: `m!casino blockresolve <bet-id> <settled|void> <verified-hash|no-transfer-confirmed>`.";
@@ -191,12 +217,18 @@ async function runCasino(userId, action, args, casino, sandbox, context) {
 		return "Block prediction `" + bet.id.slice(0, 8) + "` marked " + bet.status + ". No transfer was sent.";
 	}
 	if(action === "pending" && testMode) {
+		if(!isAdmin) {
+			return "This sandbox action is available only to configured administrators.";
+		}
 		const wagers = (await (testMode ? sandbox.getOpenBets(userId) : casino.getOpenWagers(userId))).slice(0, 10);
 		return wagers.length ? wagers.map(wager => formatWager(wager) + " (user " + wager.userId
 			+ "; full ID: `" + wager.id + "`)").join("\n")
 			: "No wagers need review.";
 	}
 	if(action === "resolve" && testMode) {
+		if(!isAdmin) {
+			return "This sandbox action is available only to configured administrators.";
+		}
 		const [ wagerId, resolution, proof ] = args;
 		if(!wagerId || !resolution || !proof) {
 			return "Usage: `m!casino resolve <wager-id> <settled|void> <tx-hash|no-transfer-confirmed>`.";
@@ -223,6 +255,7 @@ async function runCasino(userId, action, args, casino, sandbox, context) {
 }
 
 export default {
+	messageAliases: [ "coinflip", "guess", "roulette", "blackjack", "dice" ],
 	args_min: 1, args_max: 4, hide_msg: true, where: 0, cooldown: 5,
 	description: "Check your casino balance/history or place an MRL wager",
 	options: [
@@ -259,7 +292,19 @@ export default {
 		{ name: "proof", description: "Verified tx/block hash or no-transfer-confirmed", type: 3, required: false }
 	],
 	async run(message, cmd, args, hide, services) {
-		const result = await runCasino(message.author.id, args[0]?.toLowerCase(), args.slice(1), services.casino, services.casinoSandbox, {
+		const action = cmd === "casino" ? args[0]?.toLowerCase() : cmd === "guessnexthash" ? "guess" : cmd;
+		const gameChannels = services.casino.config?.casinoGameChannels || {};
+		const blockActions = [ "guess", "block", "blockpending", "blockresolve" ];
+		const isGameAction = [ "coinflip", "roulette", "blackjack", "dice" ].includes(action) || blockActions.includes(action);
+		const targetChannelId = blockActions.includes(action) ? gameChannels.guessNextHash : gameChannels[action];
+		if(isGameAction && targetChannelId && message.channel.id !== targetChannelId) {
+			return "Use this game in <#" + targetChannelId + ">. Your wager was not placed.";
+		}
+		if(isGameAction && !targetChannelId) {
+			return "The channel for this game is not configured. Please contact a casino administrator.";
+		}
+		const actionArgs = cmd === "casino" ? args.slice(1) : args;
+		const result = await runCasino(message.author.id, action, actionArgs, services.casino, services.casinoSandbox, {
 			bot: services.bot,
 			channel: message.channel,
 			logger: services.logger

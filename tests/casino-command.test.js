@@ -2,14 +2,113 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import casinoCommand from "../commands/casino.js";
 
+test("direct game alias invokes its game without the casino prefix", async () => {
+	let call;
+	const response = await casinoCommand.run(
+		{ author: { id: "user-1" }, channel: { id: "dice-channel" } },
+		"dice",
+		[ "5", "0.1" ],
+		false,
+		{
+			casino: { config: { casinoAdminUserIds: [ "user-1" ], casinoGameChannels: { dice: "dice-channel" } }, play: async (...args) => {
+				call = args;
+				return { id: "wager-123456", game: "dice", outcome: 5, won: false, payout: "0", stake: "100000000", stakeTxHash: "tx-hash" };
+			} }
+		}
+	);
+
+	assert.deepEqual(call, [ "user-1", "dice", "5", "0.1" ]);
+	assert.match(response, /Casino dice/);
+});
+
+test("m!guess places a hash suffix prediction in the guess channel", async () => {
+	let call;
+	const response = await casinoCommand.run(
+		{ author: { id: "user-3" }, channel: { id: "guess-channel" } },
+		"guess",
+		[ "CDEF", "0.1" ],
+		false,
+		{
+			casino: { config: { casinoAdminUserIds: [ "user-3" ], casinoTestMode: true, casinoGameChannels: { guessNextHash: "guess-channel" } } },
+			casinoSandbox: { play: async (...args) => {
+				call = args;
+				return { guess: "cdef", targetHeight: 123, stake: "100000000", payout: "384000000000" };
+			} }
+		}
+	);
+
+	assert.deepEqual(call, [ "user-3", "guess", "CDEF", "0.1" ]);
+	assert.match(response, /placed for block 123/);
+});
+
+test("test mode allows non-admin users to play sandbox games", async () => {
+	let call;
+	const response = await casinoCommand.run(
+		{ author: { id: "user-9" }, channel: { id: "coinflip-channel" } },
+		"coinflip",
+		[ "heads", "0.1" ],
+		false,
+		{
+			casino: {
+				config: {
+					casinoAdminUserIds: [ "admin-1" ],
+					casinoTestMode: true,
+					casinoGameChannels: { coinflip: "coinflip-channel" }
+				}
+			},
+			casinoSandbox: {
+				play: async (...args) => {
+					call = args;
+					return { game: "coinflip", outcome: "heads", won: true, payout: "200000000", balance: "1100000000" };
+				}
+			}
+		}
+	);
+
+	assert.deepEqual(call, [ "user-9", "coinflip", "heads", "0.1" ]);
+	assert.match(response, /TEST casino coinflip/);
+});
+
+test("game command in another game's channel points to the right channel without placing a bet", async () => {
+	let played = false;
+	const response = await casinoCommand.run(
+		{ author: { id: "user-1" }, channel: { id: "roulette-channel" } },
+		"dice",
+		[ "5", "0.1" ],
+		false,
+		{
+			bot: { getChannel: id => ({ id }) },
+			casino: { config: { casinoAdminUserIds: [ "user-1" ], casinoGameChannels: { dice: "dice-channel" } }, play: async () => { played = true; } }
+		}
+	);
+
+	assert.match(response, /<#dice-channel>/);
+	assert.match(response, /wager was not placed/);
+	assert.equal(played, false);
+});
+
+test("game command is blocked when its channel is not configured", async () => {
+	let played = false;
+	const response = await casinoCommand.run(
+		{ author: { id: "user-1" }, channel: { id: "dice-channel" } },
+		"dice",
+		[ "5", "0.1" ],
+		false,
+		{ casino: { config: { casinoAdminUserIds: [ "user-1" ] }, play: async () => { played = true; } } }
+	);
+
+	assert.match(response, /channel for this game is not configured/);
+	assert.equal(played, false);
+});
+
 test("message casino command forwards a normalized bet and formats the result", async () => {
 	let call;
 	const response = await casinoCommand.run(
-		{ author: { id: "user-1" } },
+		{ author: { id: "user-1" }, channel: { id: "coinflip-channel" } },
 		"casino",
 		[ "coinflip", "HEADS", "0.1" ],
 		false,
-		{ casino: { config: { casinoAdminUserIds: [ "user-1" ] }, play: async (...args) => {
+		{ casino: { config: { casinoAdminUserIds: [ "user-1" ], casinoGameChannels: { coinflip: "coinflip-channel" } }, play: async (...args) => {
 			call = args;
 			return {
 				id: "wager-123456",
@@ -31,11 +130,11 @@ test("message casino command forwards a normalized bet and formats the result", 
 test("message casino command places a block suffix prediction", async () => {
 	let call;
 	const response = await casinoCommand.run(
-		{ author: { id: "user-3" } },
+		{ author: { id: "user-3" }, channel: { id: "guess-channel" } },
 		"casino",
 		[ "guess", "CDEF", "0.1" ],
 		false,
-		{ casino: { config: { casinoAdminUserIds: [ "user-3" ], casinoTestMode: true } }, casinoSandbox: { play: async (...args) => {
+		{ casino: { config: { casinoAdminUserIds: [ "user-3" ], casinoTestMode: true, casinoGameChannels: { guessNextHash: "guess-channel" } } }, casinoSandbox: { play: async (...args) => {
 			call = args;
 			return { guess: "cdef", targetHeight: 123, stake: "100000000", payout: "384000000000" };
 		} } }
@@ -48,25 +147,60 @@ test("message casino command places a block suffix prediction", async () => {
 
 test("block status action returns the current prediction round", async () => {
 	const response = await casinoCommand.run(
-		{ author: { id: "user-4" } },
+		{ author: { id: "user-4" }, channel: { id: "guess-channel" } },
 		"casino",
 		[ "block" ],
 		false,
-		{ casino: { config: { casinoAdminUserIds: [ "user-4" ] }, blockGame: { getCurrentRound: async () => ({ height: 456, bets: [] }) } } }
+		{ casino: { config: { casinoAdminUserIds: [ "user-4" ], casinoGameChannels: { guessNextHash: "guess-channel" } }, blockGame: { getCurrentRound: async () => ({ height: 456, bets: [] }) } } }
 	);
 
 	assert.match(response, /Block 456/);
 	assert.match(response, /no predictions/);
 });
 
+test("block status includes previous round hash, suffix, and winners/losers", async () => {
+	const response = await casinoCommand.run(
+		{ author: { id: "user-4" }, channel: { id: "guess-channel" } },
+		"casino",
+		[ "block" ],
+		false,
+		{
+			casino: {
+				config: { casinoAdminUserIds: [ "user-4" ], casinoGameChannels: { guessNextHash: "guess-channel" } },
+				blockGame: {
+					getCurrentRound: async () => ({
+						height: 500,
+						bets: [],
+						previousRound: {
+							height: 499,
+							hash: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+							hashSuffix: "456789",
+							bets: [
+								{ userId: "100", guess: "6789", stake: "100000000", status: "settled", won: true },
+								{ userId: "200", guess: "beef", stake: "200000000", status: "settled", won: false }
+							]
+						}
+					})
+				}
+			}
+		}
+	);
+
+	assert.match(response, /Previous round 499/);
+	assert.match(response, /Block hash: `abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789`/);
+	assert.match(response, /Last 6 chars: `456789`/);
+	assert.match(response, /<@100> guessed `6789` .* won/);
+	assert.match(response, /<@200> guessed `beef` .* lost/);
+});
+
 test("blackjack hit displays the dealer's visible card instead of undefined", async () => {
 	const response = await casinoCommand.run(
-		{ author: { id: "690157533498704062" } },
+		{ author: { id: "690157533498704062" }, channel: { id: "blackjack-channel" } },
 		"casino",
 		[ "blackjack", "hit" ],
 		false,
 		{
-			casino: { config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true } },
+			casino: { config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true, casinoGameChannels: { blackjack: "blackjack-channel" } } },
 			casinoSandbox: { hitBlackjack: async () => ({ status: "playing", player: [ "7♣", "2♥", "2♣" ], dealerVisible: "J♣" }) }
 		}
 	);
@@ -78,12 +212,12 @@ test("blackjack hit displays the dealer's visible card instead of undefined", as
 
 test("blackjack bust displays the revealed dealer hand and test balance", async () => {
 	const response = await casinoCommand.run(
-		{ author: { id: "690157533498704062" } },
+		{ author: { id: "690157533498704062" }, channel: { id: "blackjack-channel" } },
 		"casino",
 		[ "blackjack", "hit" ],
 		false,
 		{
-			casino: { config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true } },
+			casino: { config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true, casinoGameChannels: { blackjack: "blackjack-channel" } } },
 			casinoSandbox: { hitBlackjack: async () => ({
 				status: "bust",
 				player: [ "7♣", "2♥", "2♣", "8♦" ],
@@ -150,7 +284,7 @@ test("slash resolution forwards the proof and does not send transfers", async ()
 test("roulette spins through wheel frames and ends with an emoji result", async () => {
 	const edits = [];
 	const response = await casinoCommand.run(
-		{ author: { id: "690157533498704062" }, channel: { id: "channel-1" } },
+		{ author: { id: "690157533498704062" }, channel: { id: "roulette-channel" } },
 		"casino",
 		[ "roulette", "17", "1" ],
 		false,
@@ -160,7 +294,7 @@ test("roulette spins through wheel frames and ends with an emoji result", async 
 				editMessage: async (channelId, messageId, content) => edits.push(content)
 			},
 			casino: {
-				config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true },
+				config: { casinoAdminUserIds: [ "690157533498704062" ], casinoTestMode: true, casinoGameChannels: { roulette: "roulette-channel" } },
 				casinoTestMode: true
 			},
 			casinoSandbox: {
@@ -179,7 +313,7 @@ test("roulette spins through wheel frames and ends with an emoji result", async 
 test("roulette animation failures do not throw after the wager is processed", async () => {
 	const errors = [];
 	const messages = [];
-	const message = { author: { id: "690157533498704062" }, channel: { id: "channel-1" } };
+	const message = { author: { id: "690157533498704062" }, channel: { id: "roulette-channel" } };
 	const services = {
 		bot: { createMessage: async (channelId, content) => {
 			if(content.includes("spinning")) throw new Error("Discord unavailable");
@@ -187,7 +321,7 @@ test("roulette animation failures do not throw after the wager is processed", as
 		} },
 		logger: { err: (...args) => errors.push(args) },
 		casino: {
-			config: { casinoAdminUserIds: [ "690157533498704062" ] },
+			config: { casinoAdminUserIds: [ "690157533498704062" ], casinoGameChannels: { roulette: "roulette-channel" } },
 			play: async () => ({ id: "bet-1", game: "roulette", outcome: { number: 17, color: "red" }, won: false, payout: "0", stake: "100000000", stakeTxHash: "tx" })
 		}
 	};

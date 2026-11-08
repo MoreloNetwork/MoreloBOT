@@ -57,10 +57,10 @@ test("block guess payouts scale with the number of matching characters", () => {
 	assert.throws(() => getBlockGuessPayout(100n, 7), /1 to 6/);
 });
 
-test("predictions persist for the current height and settle once when its block arrives", async t => {
+test("predictions target the next height and settle once when its block becomes top", async t => {
 	const { game, store, transfers } = await createGame(t);
 	const bet = await game.play("user-1", "cdef", "0.1");
-	assert.equal(bet.targetHeight, 42);
+	assert.equal(bet.targetHeight, 43);
 	assert.equal(bet.status, "open");
 	assert.equal(transfers.length, 1);
 	const first = await game.checkForNewBlocks();
@@ -84,17 +84,50 @@ test("predictions persist for the current height and settle once when its block 
 	assert.equal(mined.settledBlocks[0].status, "settled");
 	assert.equal(mined.settledBlocks[0].bets[0].won, true);
 	assert.equal(transfers.length, 2);
-	await store.markBlockAnnounced(42);
+	await store.markBlockAnnounced(43);
 	const repeated = await minedGame.checkForNewBlocks();
 	assert.equal(repeated.settledBlocks.length, 0);
 	assert.equal(transfers.length, 2);
 	assert.equal((await store.getBet(bet.id)).status, "settled");
 });
 
-test("round prevents duplicate guesses from one user and rejects unaffordable payout liability", async t => {
+test("one user can place multiple predictions and each is settled against the new top block hash", async t => {
+	const { game, store, transfers } = await createGame(t);
+	const firstBet = await game.play("user-2", "cdef", "0.001");
+	const secondBet = await game.play("user-2", "abcdef", "0.001");
+	const thirdBet = await game.play("user-2", "badc", "0.001");
+
+	assert.equal(new Set([ firstBet.id, secondBet.id, thirdBet.id ]).size, 3);
+	assert.equal((await store.getRoundBets(43)).length, 3);
+
+	const minedGame = new CasinoBlockGame({
+		wallet: game.wallet,
+		daemon: {
+			getInfo: async () => ({ getHeight: () => 43 }),
+			getBlockByHeight: async height => ({ getHash: () => blockHash, getHeight: () => height })
+		},
+		config: game.config,
+		store,
+		sendTransaction: async transaction => {
+			transfers.push(transaction);
+			return "tx-" + transfers.length;
+		},
+		dependencies: { getUserAddress: async () => "address-user" }
+	});
+
+	const result = await minedGame.checkForNewBlocks();
+	assert.equal(result.settledBlocks.length, 1);
+	assert.equal(result.settledBlocks[0].height, 43);
+	assert.equal(result.settledBlocks[0].hash, blockHash);
+	assert.deepEqual(result.settledBlocks[0].bets.map(bet => bet.won), [ true, true, false ]);
+	assert.equal(result.settledBlocks[0].bets.filter(bet => bet.won).length, 2);
+	assert.equal(transfers.length, 5);
+});
+
+test("round accepts repeat guesses from one user and rejects unaffordable payout liability", async t => {
 	const { game } = await createGame(t);
 	await game.play("user-2", "ab", "0.1");
-	await assert.rejects(game.play("user-2", "cd", "0.1"), /already have a prediction/);
+	await assert.doesNotReject(game.play("user-2", "cd", "0.1"));
 	const underfunded = await createGame(t, { houseBalance: 1n });
 	await assert.rejects(underfunded.game.play("user-3", "abcdef", "0.1"), /cannot cover/);
 });
@@ -103,10 +136,10 @@ test("unresolved transfers are retained for review and block round records are d
 	const { game, store, config } = await createGame(t);
 	const bet = await game.play("user-4", "cdef", "0.1");
 	await store.updateBet(bet.id, { status: "payout_submitting" });
-	const block = await game.settleBlock(42, blockHash);
+	const block = await game.settleBlock(43, blockHash);
 	assert.equal(block.status, "needs_review");
 	const reopened = new CasinoBlockStore(store.filePath);
-	assert.equal((await reopened.getBlock(42)).hash, blockHash);
+	assert.equal((await reopened.getBlock(43)).hash, blockHash);
 	assert.equal((await reopened.getBet(bet.id)).status, "needs_review");
 	config.casinoEnabled = false;
 	await assert.rejects(game.play("user-5", "aa", "0.1"), /disabled/);
@@ -138,11 +171,11 @@ test("a block mined during stake transfer is held for operator review", async t 
 	game.daemon.getInfo = async () => ({ getHeight: () => height });
 	game.sendTransaction = async transaction => {
 		transfers.push(transaction);
-		height = 43;
+		height = 44;
 		return "late-stake-hash";
 	};
 	await assert.rejects(game.play("user-6", "abcd", "0.1"), /needs operator review/);
-	const [ bet ] = await store.getRoundBets(42);
+	const [ bet ] = await store.getRoundBets(43);
 	assert.equal(bet.status, "needs_review");
 	assert.equal(bet.failureStage, "late_stake");
 	assert.equal(bet.stakeTxHash, "late-stake-hash");

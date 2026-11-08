@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const initial = () => ({ version: 1, bets: [], blocks: [] });
+const initial = () => ({ version: 1, bets: [], blocks: [], rounds: [] });
 const copy = value => JSON.parse(JSON.stringify(value));
 
 export default class CasinoBlockStore {
@@ -19,7 +19,7 @@ export default class CasinoBlockStore {
 				try {
 					const saved = JSON.parse(await fs.readFile(this.filePath, "utf8"));
 					if(saved?.version !== 1 || !Array.isArray(saved.bets) || !Array.isArray(saved.blocks)) throw new Error("Unsupported casino block store format.");
-					this.state = { version: 1, bets: saved.bets, blocks: saved.blocks };
+					this.state = { version: 1, bets: saved.bets, blocks: saved.blocks, rounds: Array.isArray(saved.rounds) ? saved.rounds : [] };
 				} catch(ex) {
 					if(ex.code !== "ENOENT") throw ex;
 					this.state = initial();
@@ -67,6 +67,11 @@ export default class CasinoBlockStore {
 	async getRoundBets(height) {
 		await this.load();
 		return this.state.bets.filter(bet => bet.targetHeight === height).map(copy);
+	}
+
+	async getSettledBets() {
+		await this.load();
+		return this.state.bets.filter(bet => bet.status === "settled").map(copy);
 	}
 
 	async getUserRoundBet(height, userId) {
@@ -121,5 +126,37 @@ export default class CasinoBlockStore {
 
 	async markBlockAnnounced(height) {
 		return this.updateBlock(height, { announcedAt: Date.now() });
+	}
+
+	async getLastAnnouncedRound() {
+		await this.load();
+		const announced = this.state.rounds.reduce((last, round) => Math.max(last, round.height), 0);
+		const legacyHistory = [ ...this.state.bets.map(bet => bet.targetHeight), ...this.state.blocks.map(block => block.height) ]
+			.reduce((last, height) => Math.max(last, height), 0);
+		return Math.max(announced, legacyHistory);
+	}
+
+	async getRound(height) {
+		await this.load();
+		const round = this.state.rounds.find(item => item.height === height);
+		return round ? copy(round) : undefined;
+	}
+
+	async markRoundAnnouncing(height) {
+		await this.load();
+		const round = this.state.rounds.find(item => item.height === height);
+		if(round) round.status = "announcing";
+		else this.state.rounds.push({ height, status: "announcing", announcedAt: null });
+		await this.save();
+		return height;
+	}
+
+	async markRoundAnnounced(height) {
+		await this.load();
+		const round = this.state.rounds.find(item => item.height === height);
+		if(round) Object.assign(round, { status: "announced", announcedAt: Date.now() });
+		else this.state.rounds.push({ height, status: "announced", announcedAt: Date.now() });
+		await this.save();
+		return height;
 	}
 }

@@ -59,12 +59,10 @@ export default class CasinoSandbox {
 	}
 
 	async balance(userId) {
-		this.requireAdmin(userId);
 		return this.store.getBalance(userId);
 	}
 
 	async play(userId, game, selection, amountText) {
-		this.requireAdmin(userId);
 		return this.serialize(() => this.playNow(userId, game, selection, amountText));
 	}
 
@@ -136,16 +134,13 @@ export default class CasinoSandbox {
 			throw new UserError("Choose a 1 to 6 character hexadecimal block-hash suffix.");
 		}
 		const round = await this.daemon.getInfo();
-		const targetHeight = round.getHeight();
-		if(await this.blockStore.getUserRoundBet(targetHeight, userId)) {
-			throw new UserError("You already have a prediction for block " + targetHeight + ".");
-		}
+		const targetHeight = round.getHeight() + 1;
 		const payout = getBlockGuessPayout(amount, prediction.length);
 		if(await this.blockStore.getLiability() + payout > BigInt(this.config.casinoSandboxHouseBalance || "1000000") * 1000000000n) {
 			throw new UserError("Sandbox house cannot cover this prediction's maximum test payout.");
 		}
 		const currentInfo = await this.daemon.getInfo();
-		if(currentInfo.getHeight() !== targetHeight) {
+		if(currentInfo.getHeight() + 1 !== targetHeight) {
 			throw new UserError("The block round has closed; no prediction was placed.");
 		}
 		await this.store.setBalance(userId, balance - amount);
@@ -157,9 +152,21 @@ export default class CasinoSandbox {
 	}
 
 	async getCurrentRound(userId) {
-		this.requireAdmin(userId);
 		const info = await this.daemon.getInfo();
-		return { height: info.getHeight(), bets: await this.blockStore.getRoundBets(info.getHeight()) };
+		const height = info.getHeight() + 1;
+		const [ bets, previousBlock ] = await Promise.all([
+			this.blockStore.getRoundBets(height),
+			this.blockStore.getBlock(height - 1)
+		]);
+		const previousRound = previousBlock
+			? {
+				height: height - 1,
+				hash: previousBlock.hash,
+				hashSuffix: String(previousBlock.hash).slice(-6),
+				bets: await this.blockStore.getRoundBets(height - 1)
+			}
+			: undefined;
+		return { height, bets, previousRound };
 	}
 
 	async settleGuessRound(height, hash) {
@@ -192,9 +199,6 @@ export default class CasinoSandbox {
 				await this.store.setBalance(bet.userId, balance + payout);
 				const result = await this.blockStore.updateBet(bet.id, { won, payout: String(payout), status: "settled", blockHash: hash.toLowerCase() });
 				settled.push(result);
-				if(won) {
-					await this.onWin(result).catch(() => {});
-				}
 			}
 			const pendingBets = (await this.blockStore.getRoundBets(height)).some(bet => bet.status === "open" || bet.status === "needs_review");
 			if(!pendingBets) await this.blockStore.updateBlock(height, { status: "settled", settledAt: Date.now() });
@@ -206,7 +210,7 @@ export default class CasinoSandbox {
 		const info = await this.daemon.getInfo();
 		const currentHeight = info.getHeight();
 		const pendingHeights = [...new Set((await this.blockStore.getOpenBets())
-			.filter(bet => bet.targetHeight < currentHeight).map(bet => bet.targetHeight))];
+			.filter(bet => bet.targetHeight <= currentHeight).map(bet => bet.targetHeight))];
 		const settledBlocks = [];
 		for(const height of pendingHeights) {
 			const block = await this.daemon.getBlockByHeight(height);
@@ -222,7 +226,6 @@ export default class CasinoSandbox {
 	}
 
 	async startBlackjack(userId, amountText) {
-		this.requireAdmin(userId);
 		return this.serialize(async () => {
 			const existing = await this.store.getBlackjack(userId);
 			if(existing) {
@@ -255,7 +258,6 @@ export default class CasinoSandbox {
 	}
 
 	async hitBlackjack(userId) {
-		this.requireAdmin(userId);
 		return this.serialize(async () => {
 			const hand = await this.store.getBlackjack(userId);
 			if(!hand) {
@@ -282,7 +284,6 @@ export default class CasinoSandbox {
 	}
 
 	async standBlackjack(userId) {
-		this.requireAdmin(userId);
 		return this.serialize(async () => {
 			const hand = await this.store.getBlackjack(userId);
 			if(!hand) {
@@ -357,7 +358,6 @@ export default class CasinoSandbox {
 	}
 
 	async history(userId) {
-		this.requireAdmin(userId);
 		return this.store.getHistory(userId);
 	}
 }

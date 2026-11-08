@@ -15,6 +15,7 @@
     "erlpack": "^0.1.4",
     "eventemitter3": "^5.0.1",
     "monero-ts": "https://codeload.github.com/MoreloNetwork/monero-ts/tar.gz/7ea8cd036b2090ddaf5659eabf0db1f710faa3b0",
+    "pg": "^8.13.1",
     "zlib-sync": "^0.1.9"
   }
 }

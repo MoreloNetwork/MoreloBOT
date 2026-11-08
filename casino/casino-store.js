@@ -98,4 +98,9 @@ export default class CasinoStore {
 		await this.load();
 		return this.state.wagers.filter(wager => openStatuses.has(wager.status)).map(copy);
 	}
+
+	async getSettledWagers() {
+		await this.load();
+		return this.state.wagers.filter(wager => wager.status === "settled").map(copy);
+	}
 }

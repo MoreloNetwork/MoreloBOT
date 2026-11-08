@@ -71,14 +71,10 @@ export default class CasinoBlockGame {
 			throw new UserError("Bet must be at least " + formatMRL(minimum) + ".");
 		}
 		const info = await this.daemon.getInfo();
-		const targetHeight = info.getHeight();
+		const targetHeight = info.getHeight() + 1;
 		const houseAccountIndex = Number(this.config.casinoHouseAccountIndex);
 		if(!Number.isSafeInteger(houseAccountIndex) || houseAccountIndex < 1) {
 			throw new UserError("Casino house account is not configured.");
-		}
-		const existingBet = await this.store.getUserRoundBet(targetHeight, userId);
-		if(existingBet) {
-			throw new UserError("You already have a prediction for block " + targetHeight + ".");
 		}
 		const roundBets = await this.store.getRoundBets(targetHeight);
 		if(roundBets.some(bet => bet.status === "stake_submitting" || bet.status === "needs_review")) {
@@ -99,7 +95,7 @@ export default class CasinoBlockGame {
 			throw new UserError("Casino house cannot cover this prediction's maximum payout.");
 		}
 		const currentInfo = await this.daemon.getInfo();
-		if(currentInfo.getHeight() !== targetHeight) {
+		if(currentInfo.getHeight() + 1 !== targetHeight) {
 			throw new UserError("The block round has closed; no prediction was placed.");
 		}
 		const houseAddress = await this.wallet.getAddress(houseAccountIndex, 0);
@@ -124,7 +120,7 @@ export default class CasinoBlockGame {
 			throw new UserError("Prediction " + id.slice(0, 8) + " needs review; do not retry until its transfer is checked.");
 		}
 		const currentHeight = (await this.daemon.getInfo()).getHeight();
-		if(currentHeight > targetHeight) {
+		if(currentHeight >= targetHeight) {
 			await this.store.updateBet(id, {
 				status: "needs_review",
 				stakeTxHash,
@@ -138,8 +134,20 @@ export default class CasinoBlockGame {
 
 	getCurrentRound() {
 		return this.daemon.getInfo().then(async info => {
-			const height = info.getHeight();
-			return { height, bets: await this.store.getRoundBets(height) };
+			const height = info.getHeight() + 1;
+			const [ bets, previousBlock ] = await Promise.all([
+				this.store.getRoundBets(height),
+				this.store.getBlock(height - 1)
+			]);
+			const previousRound = previousBlock
+				? {
+					height: height - 1,
+					hash: previousBlock.hash,
+					hashSuffix: String(previousBlock.hash).slice(-6),
+					bets: await this.store.getRoundBets(height - 1)
+				}
+				: undefined;
+			return { height, bets, previousRound };
 		});
 	}
 
@@ -148,7 +156,8 @@ export default class CasinoBlockGame {
 			const info = await this.daemon.getInfo();
 			const height = info.getHeight();
 			const pendingHeights = [...new Set((await this.store.getOpenBets())
-				.filter(bet => bet.targetHeight < height).map(bet => bet.targetHeight))];
+				.filter(bet => bet.targetHeight <= height)
+				.map(bet => bet.targetHeight))];
 			for(const targetHeight of pendingHeights) {
 				const block = await this.daemon.getBlockByHeight(targetHeight);
 				const hash = block?.getHash?.() || block?.hash;
@@ -262,9 +271,9 @@ export default class CasinoBlockGame {
 			const info = await this.daemon.getInfo();
 			const height = info.getHeight();
 			const settledBlocks = [];
-			const pendingHeights = [ ...new Set((await this.store.getOpenBets())
-				.filter(bet => bet.targetHeight < height)
-				.map(bet => bet.targetHeight)) ];
+			const pendingHeights = [...new Set((await this.store.getOpenBets())
+				.filter(bet => bet.targetHeight <= height)
+				.map(bet => bet.targetHeight))];
 			for(const targetHeight of pendingHeights) {
 				const block = await this.daemon.getBlockByHeight(targetHeight);
 				const hash = block?.getHash?.() || block?.hash;

@@ -11,7 +11,6 @@ function configuredAmount(value, name) {
 		throw new UserError("Casino configuration is invalid: " + name + ".");
 	}
 }
-}
 
 function validateSelection(game, selection) {
 	if(game === "coinflip") {
