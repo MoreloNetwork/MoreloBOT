@@ -14,10 +14,11 @@ async function createGame(t, options = {}) {
 	const store = new CasinoBlockStore(path.join(directory, "bets.json"));
 	const transfers = [];
 	const wallet = {
-		getUnlockedBalance: async accountIndex => accountIndex === 9
-			? options.houseBalance ?? 100_000_000_000_000n
-			: 10_000_000_000n,
-		getAddress: async accountIndex => "address-" + accountIndex
+		getUnlockedBalance: async () => 10_000_000_000n
+	};
+	const houseWallet = {
+		getUnlockedBalance: async () => options.houseBalance ?? 100_000_000_000_000n,
+		getAddress: async () => "address-house"
 	};
 	const daemon = {
 		getInfo: async () => ({ getHeight: () => options.height ?? 42 }),
@@ -25,7 +26,6 @@ async function createGame(t, options = {}) {
 	};
 	const config = {
 		casinoEnabled: true,
-		casinoHouseAccountIndex: 9,
 		casinoMinBet: "0.001",
 		casinoFeeReserve: "0.001"
 	};
@@ -39,12 +39,13 @@ async function createGame(t, options = {}) {
 			return "tx-" + transfers.length;
 		},
 		dependencies: {
+			houseWallet,
 			getUserAccount: async () => 4,
 			getUserAddress: async () => "address-user"
 		}
 	});
 
-	return { game, store, transfers, config };
+	return { game, store, transfers, config, houseWallet };
 }
 
 test("block guess payouts scale with the number of matching characters", () => {
@@ -58,7 +59,7 @@ test("block guess payouts scale with the number of matching characters", () => {
 });
 
 test("predictions target the next height and settle once when its block becomes top", async t => {
-	const { game, store, transfers } = await createGame(t);
+	const { game, store, transfers, houseWallet } = await createGame(t);
 	const bet = await game.play("user-1", "cdef", "0.1");
 	assert.equal(bet.targetHeight, 43);
 	assert.equal(bet.status, "open");
@@ -77,7 +78,7 @@ test("predictions target the next height and settle once when its block becomes 
 			transfers.push(transaction);
 			return "tx-" + transfers.length;
 		},
-		dependencies: { getUserAddress: async () => "address-user" }
+		dependencies: { houseWallet, getUserAddress: async () => "address-user" }
 	});
 	const mined = await minedGame.checkForNewBlocks();
 	assert.equal(mined.settledBlocks.length, 1);
@@ -92,7 +93,7 @@ test("predictions target the next height and settle once when its block becomes 
 });
 
 test("one user can place multiple predictions and each is settled against the new top block hash", async t => {
-	const { game, store, transfers } = await createGame(t);
+	const { game, store, transfers, houseWallet } = await createGame(t);
 	const firstBet = await game.play("user-2", "cdef", "0.001");
 	const secondBet = await game.play("user-2", "abcdef", "0.001");
 	const thirdBet = await game.play("user-2", "badc", "0.001");
@@ -112,7 +113,7 @@ test("one user can place multiple predictions and each is settled against the ne
 			transfers.push(transaction);
 			return "tx-" + transfers.length;
 		},
-		dependencies: { getUserAddress: async () => "address-user" }
+		dependencies: { houseWallet, getUserAddress: async () => "address-user" }
 	});
 
 	const result = await minedGame.checkForNewBlocks();
@@ -169,7 +170,7 @@ test("a block mined during stake transfer is held for operator review", async t 
 	const { game, store, transfers } = await createGame(t);
 	let height = 42;
 	game.daemon.getInfo = async () => ({ getHeight: () => height });
-	game.sendTransaction = async transaction => {
+	game.sendStakeTransaction = async transaction => {
 		transfers.push(transaction);
 		height = 44;
 		return "late-stake-hash";

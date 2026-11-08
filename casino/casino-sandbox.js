@@ -72,10 +72,6 @@ export default class CasinoSandbox {
 		if(amount < minimum) {
 			throw new UserError("Test bet is below the configured minimum.");
 		}
-		const maximum = parseMRL(this.config.casinoMaxBet || "0.1");
-		if(amount > maximum) {
-			throw new UserError("Test bet exceeds the configured maximum.");
-		}
 		const balance = await this.store.getBalance(userId);
 		if(balance < amount) {
 			throw new UserError("Not enough test balance.");
@@ -233,8 +229,7 @@ export default class CasinoSandbox {
 			}
 			const stake = parseMRL(amountText);
 			const balance = await this.store.getBalance(userId);
-			if(stake < parseMRL(this.config.casinoMinBet || "0.001")
-				|| stake > parseMRL(this.config.casinoMaxBet || "0.1") || balance < stake) {
+			if(stake < parseMRL(this.config.casinoMinBet || "0.001") || balance < stake) {
 				throw new UserError("Invalid bet or insufficient test balance.");
 			}
 			const player = [ drawCard(this.randomInt), drawCard(this.randomInt) ];

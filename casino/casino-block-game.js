@@ -22,19 +22,27 @@ function shortError(ex) {
 }
 
 export default class CasinoBlockGame {
-	constructor({ wallet, daemon, config, store, sendTransaction, dependencies = {} }) {
+	constructor({ wallet, daemon, config, store, sendTransaction, sendStakeTransaction, sendPayoutTransaction, dependencies = {} }) {
 		this.wallet = wallet;
+		this.houseWallet = dependencies.houseWallet || wallet;
 		this.daemon = daemon;
 		this.config = config;
 		this.store = store;
 		this.serializeOperation = dependencies.serialize;
 		this.getUserAccount = dependencies.getUserAccount || getUserAccount;
 		this.getUserAddress = dependencies.getUserAddress || getUserAddress;
-		this.sendTransaction = sendTransaction || (async options => {
+		this.sendStakeTransaction = sendStakeTransaction || sendTransaction || (async options => {
 			if(process.env.MORELOBOT_TEST_MODE === "1") {
 				throw new UserError("MRL transfers are disabled in test mode.");
 			}
 			const transaction = await this.wallet.createTx({ ...options, relay: true });
+			return transaction.getHash();
+		});
+		this.sendPayoutTransaction = sendPayoutTransaction || sendTransaction || (async options => {
+			if(process.env.MORELOBOT_TEST_MODE === "1") {
+				throw new UserError("MRL transfers are disabled in test mode.");
+			}
+			const transaction = await this.houseWallet.createTx({ ...options, relay: true });
 			return transaction.getHash();
 		});
 		this.queue = Promise.resolve();
@@ -55,7 +63,7 @@ export default class CasinoBlockGame {
 
 	async playNow(userId, guess, amountText) {
 		if(this.config.casinoEnabled !== true) {
-			throw new UserError("MRL casino is disabled until its house account is configured.");
+			throw new UserError("MRL casino is disabled until its house wallet is configured.");
 		}
 		if(process.env.MORELOBOT_TEST_MODE === "1") {
 			throw new UserError("MRL transfers are disabled in test mode.");
@@ -72,25 +80,18 @@ export default class CasinoBlockGame {
 		}
 		const info = await this.daemon.getInfo();
 		const targetHeight = info.getHeight() + 1;
-		const houseAccountIndex = Number(this.config.casinoHouseAccountIndex);
-		if(!Number.isSafeInteger(houseAccountIndex) || houseAccountIndex < 1) {
-			throw new UserError("Casino house account is not configured.");
-		}
 		const roundBets = await this.store.getRoundBets(targetHeight);
 		if(roundBets.some(bet => bet.status === "stake_submitting" || bet.status === "needs_review")) {
 			throw new UserError("This block round is awaiting wager review and cannot accept additional predictions.");
 		}
 		const accountIndex = await this.getUserAccount(this.wallet, userId, this.config);
-		if(accountIndex === houseAccountIndex) {
-			throw new UserError("You cannot place bets from the casino house account.");
-		}
 		const balance = await this.wallet.getUnlockedBalance(accountIndex);
 		if(balance < stake + feeReserve) {
 			throw new UserError("Not enough unlocked MRL to cover the bet and transaction fee.");
 		}
 		const payout = getBlockGuessPayout(stake, prediction.length);
 		const liability = await this.store.getLiability();
-		const houseBalance = await this.wallet.getUnlockedBalance(houseAccountIndex);
+		const houseBalance = await this.houseWallet.getUnlockedBalance(0);
 		if(houseBalance < liability + payout + feeReserve) {
 			throw new UserError("Casino house cannot cover this prediction's maximum payout.");
 		}
@@ -98,7 +99,7 @@ export default class CasinoBlockGame {
 		if(currentInfo.getHeight() + 1 !== targetHeight) {
 			throw new UserError("The block round has closed; no prediction was placed.");
 		}
-		const houseAddress = await this.wallet.getAddress(houseAccountIndex, 0);
+		const houseAddress = await this.houseWallet.getAddress(0, 0);
 		const id = randomUUID();
 		const bet = {
 			id,
@@ -114,7 +115,7 @@ export default class CasinoBlockGame {
 		await this.store.createBet(bet);
 		let stakeTxHash;
 		try {
-			stakeTxHash = await this.sendTransaction({ accountIndex, address: houseAddress, amount: stake });
+			stakeTxHash = await this.sendStakeTransaction({ accountIndex, address: houseAddress, amount: stake });
 		} catch(ex) {
 			await this.store.updateBet(id, { status: "needs_review", failureStage: "stake", failureMessage: shortError(ex) }).catch(() => {});
 			throw new UserError("Prediction " + id.slice(0, 8) + " needs review; do not retry until its transfer is checked.");
@@ -232,7 +233,6 @@ export default class CasinoBlockGame {
 		}
 		await this.store.recordBlock(height, hash.toLowerCase());
 		const bets = await this.store.getRoundBets(height);
-		const houseAccountIndex = Number(this.config.casinoHouseAccountIndex);
 		for(const bet of bets) {
 			if(bet.status === "stake_submitting" || bet.status === "payout_submitting") {
 				await this.store.updateBet(bet.id, { status: "needs_review", failureStage: bet.status });
@@ -249,8 +249,8 @@ export default class CasinoBlockGame {
 			await this.store.updateBet(bet.id, { status: "payout_submitting", blockHash: hash.toLowerCase(), won: true });
 			try {
 				const userAddress = await this.getUserAddress(this.wallet, bet.userId, this.config);
-				const payoutTxHash = await this.sendTransaction({
-					accountIndex: houseAccountIndex,
+				const payoutTxHash = await this.sendPayoutTransaction({
+					accountIndex: 0,
 					address: userAddress,
 					amount: BigInt(bet.payout)
 				});

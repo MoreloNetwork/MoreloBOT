@@ -1,4 +1,5 @@
 ﻿import { spawn } from "node:child_process";
+import path from "node:path";
 import helper from "../core/helper.js";
 
 async function isWalletRpcAvailable(url) {
@@ -29,13 +30,27 @@ async function isWalletRpcAvailable(url) {
 	return true;
 }
 
-async function ensureWalletOpen(wallet, config) {
+async function ensureWalletOpen(wallet, walletName, walletPassword) {
 	try {
 		await wallet.getPrimaryAddress();
 		return;
 	} catch {
-		await wallet.openWallet(config.walletName || "tips", config.walletPassword || "");
+		await wallet.openWallet(walletName, walletPassword || "");
 	}
+}
+
+function walletSettings(config, options = {}) {
+	const url = config[options.urlKey || "walletURL"] || "";
+	const portKey = options.portKey || "walletRpcPort";
+	const defaultPort = options.defaultPort ?? 38304;
+	const walletPath = options.walletPathKey ? config[options.walletPathKey] : "";
+	const pathName = walletPath ? path.basename(String(walletPath)) : "";
+	const pathDir = walletPath ? path.dirname(String(walletPath)) : "";
+	const walletName = config[options.walletNameKey || "walletName"] || pathName || "tips";
+	const walletPassword = config[options.walletPasswordKey || "walletPassword"] || "";
+	const walletDir = config[options.walletDirKey || "walletsPath"] || (pathDir && pathDir !== "." ? pathDir : "wallets");
+	const port = Number(config[portKey] ?? defaultPort);
+	return { url, port, walletName, walletPassword, walletDir };
 }
 
 function startWalletRpcProcess(binary, args, url, onProcess) {
@@ -101,18 +116,19 @@ function startWalletRpcProcess(binary, args, url, onProcess) {
 	});
 }
 
-export async function connectWalletRpc(monero, config, binPath, execExt, onOwnedProcess = () => {}) {
+export async function connectWalletRpc(monero, config, binPath, execExt, onOwnedProcess = () => {}, options = {}) {
 	let wallet, ownedProcess;
 	const ownsProcess = () => ownedProcess !== undefined;
+	const settings = walletSettings(config, options);
 	try {
-		if(config.walletURL) {
-			wallet = await monero.connectToWalletRpc(config.walletURL);
+		if(settings.url) {
+			wallet = await monero.connectToWalletRpc(settings.url);
 			await wallet.getVersion();
 		} else {
 			const host = "127.0.0.1";
-			const port = Number(config.walletRpcPort ?? 38304);
+			const port = settings.port;
 			if(!Number.isInteger(port) || port < 1 || port > 65535) {
-				throw new Error("walletRpcPort must be an integer between 1 and 65535");
+				throw new Error((options.portKey || "walletRpcPort") + " must be an integer between 1 and 65535");
 			}
 			const url = "http://" + host + ":" + port;
 			if(await isWalletRpcAvailable(url)) {
@@ -125,7 +141,7 @@ export async function connectWalletRpc(monero, config, binPath, execExt, onOwned
 					"--daemon-address", config.daemonURL || "http://localhost:38302",
 					"--rpc-bind-ip", host,
 					"--rpc-bind-port", String(port),
-					"--wallet-dir", config.walletsPath || "wallets"
+					"--wallet-dir", settings.walletDir
 				];
 				args.push("--disable-rpc-login");
 				ownedProcess = await startWalletRpcProcess(
@@ -137,7 +153,7 @@ export async function connectWalletRpc(monero, config, binPath, execExt, onOwned
 			}
 		}
 
-		await ensureWalletOpen(wallet, config);
+		await ensureWalletOpen(wallet, settings.walletName, settings.walletPassword);
 		return { wallet, ownsProcess: ownsProcess(), process: ownedProcess };
 	} catch(ex) {
 		if(ownedProcess) {

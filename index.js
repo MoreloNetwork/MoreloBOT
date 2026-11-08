@@ -49,9 +49,11 @@ import { updateCasinoLeaderboard } from "./core/casino-leaderboard-publisher.js"
 
 const fetch = globalThis.fetch;
 
-let daemon, wallet, bot, botAddon;
+let daemon, wallet, houseWallet, bot, botAddon;
 let ownsWalletRpcProcess = false;
 let walletRpcProcess;
+let ownsHouseWalletRpcProcess = false;
+let houseWalletRpcProcess;
 let shutdownPromise;
 let walletNotificationService;
 let casinoDatabase;
@@ -108,7 +110,13 @@ async function shutdown(reason, exitCode = 0) {
 		try {
 			await stopOwnedWalletRpc(wallet, ownsWalletRpcProcess, walletRpcProcess);
 		} catch(ex) {
-			helper.err("Can't stop wallet RPC:", ex);
+			helper.err("Can't stop tip wallet RPC:", ex);
+			exitCode ||= 1;
+		}
+		try {
+			await stopOwnedWalletRpc(houseWallet, ownsHouseWalletRpcProcess, houseWalletRpcProcess);
+		} catch(ex) {
+			helper.err("Can't stop house wallet RPC:", ex);
 			exitCode ||= 1;
 		}
 		try {
@@ -134,9 +142,13 @@ process.on("unhandledRejection", ex => {
 	void shutdown("unhandled rejection", 1);
 });
 process.on("exit", () => {
-	const child = ownsWalletRpcProcess && walletRpcProcess;
-	if(child && !child.killed) {
-		child.kill();
+	const tipChild = ownsWalletRpcProcess && walletRpcProcess;
+	if(tipChild && !tipChild.killed) {
+		tipChild.kill();
+	}
+	const houseChild = ownsHouseWalletRpcProcess && houseWalletRpcProcess;
+	if(houseChild && !houseChild.killed) {
+		houseChild.kill();
 	}
 	if(hasInstanceLock) {
 		void fs.rm(instanceLockPath, { force: true }).catch(() => {});
@@ -185,6 +197,27 @@ if(!config.token || !config.tokenAddon) {
 	} catch(ex) {
 		helper.err("Wallet:", ex);
 		await shutdown("wallet startup failed", 1);
+	}
+
+	helper.log(config.casinoHouseWalletURL ? "Connecting to house wallet..." : "Checking local house wallet RPC...");
+	try {
+		const houseConnection = await connectWalletRpc(monero, config, binPath, execExt, child => {
+			houseWalletRpcProcess = child;
+			ownsHouseWalletRpcProcess = true;
+		}, {
+			urlKey: "casinoHouseWalletURL",
+			portKey: "casinoHouseWalletRpcPort",
+			defaultPort: 38305,
+			walletPathKey: "casinoHouseWalletPath",
+			walletNameKey: "casinoHouseWalletName",
+			walletPasswordKey: "casinoHouseWalletPassword"
+		});
+		houseWallet = houseConnection.wallet;
+		ownsHouseWalletRpcProcess = houseConnection.ownsProcess;
+		houseWalletRpcProcess = houseConnection.process;
+	} catch(ex) {
+		helper.err("House wallet:", ex);
+		await shutdown("house wallet startup failed", 1);
 	}
 }
 
@@ -291,6 +324,7 @@ const casino = new CasinoService({
 	config,
 	store: casinoStore,
 	dependencies: {
+		houseWallet,
 		onWin: async wager => {
 			const outcome = wager.game === "coinflip"
 				? wager.outcome
@@ -311,7 +345,7 @@ const casinoBlockGame = new CasinoBlockGame({
 	daemon,
 	config,
 	store: casinoBlockStore,
-	dependencies: { serialize: operation => casino.serialize(operation) }
+	dependencies: { houseWallet, serialize: operation => casino.serialize(operation) }
 });
 casino.blockGame = casinoBlockGame;
 const casinoSandboxStore = new CasinoSandboxStore(config.casinoSandboxPath, parseMRL(config.casinoSandboxInitialBalance || "1000").toString());

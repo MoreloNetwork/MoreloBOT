@@ -26,25 +26,19 @@ async function createCasino(t, options = {}) {
 	const store = new CasinoStore(path.join(directory, "wagers.json"));
 	const transfers = [];
 	const wallet = {
-		getRpcConnection: () => ({
-			sendJsonRequest: async () => ({
-				result: { subaddress_accounts: [ { account_index: 9 } ] }
-			})
-		}),
-		getUnlockedBalance: async accountIndex => accountIndex === 9
-			? options.houseBalance ?? 10_000_000_000n
-			: options.userBalance ?? 2_000_000_000n,
-		getAddress: async accountIndex => "address-" + accountIndex,
+		getUnlockedBalance: async () => options.userBalance ?? 2_000_000_000n,
 		getSubaddress: async () => ({
 			getBalance: () => 2_000_000_000n,
 			getUnlockedBalance: () => 2_000_000_000n
 		})
 	};
+	const houseWallet = {
+		getUnlockedBalance: async () => options.houseBalance ?? 10_000_000_000n,
+		getAddress: async () => "address-house"
+	};
 	const config = {
 		casinoEnabled: true,
-		casinoHouseAccountIndex: 9,
 		casinoMinBet: "0.001",
-		casinoMaxBet: "1",
 		casinoFeeReserve: "0.001",
 		casinoAdminUserIds: [ "admin-1" ],
 		walletUsersPath: "unused-users.json"
@@ -61,16 +55,16 @@ async function createCasino(t, options = {}) {
 			return "a".repeat(63) + transfers.length;
 		},
 		dependencies: {
+			houseWallet,
 			getUserAccount: async () => 4,
 			getUserAddress: async () => "address-4",
-			getUserIdsByAccount: async () => options.houseUsers || [],
 			tossCoin: () => options.coinOutcome || "heads",
 			spinRoulette: () => options.rouletteOutcome || { number: 17, color: "black" },
 			onWin: options.onWin
 		}
 	});
 
-	return { service, store, wallet, config, transfers };
+	return { service, store, wallet, houseWallet, config, transfers };
 }
 
 test("the shared wins callback runs only after a winning payout is sent", async t => {
@@ -93,8 +87,8 @@ test("a winning coinflip records the stake and pays the exact gross return", asy
 		assert.equal(result.payout, "200000000");
 		assert.equal(result.status, "settled");
 		assert.deepEqual(transfers.map(({ accountIndex, address, amount }) => ({ accountIndex, address, amount })), [
-			{ accountIndex: 4, address: "address-9", amount: 100000000n },
-			{ accountIndex: 9, address: "address-4", amount: 200000000n }
+			{ accountIndex: 4, address: "address-house", amount: 100000000n },
+			{ accountIndex: 0, address: "address-4", amount: 200000000n }
 		]);
 		const [ saved ] = await store.getUserWagers("user-1");
 		assert.equal(saved.status, "settled");
@@ -134,7 +128,7 @@ test("casino is disabled by default and test mode blocks before wallet access", 
 	await assert.rejects(service.play("user-4", "coinflip", "heads", "0.1"), /disabled/);
 	config.casinoEnabled = true;
 	let accessed = false;
-	wallet.getRpcConnection = () => {
+	wallet.getUnlockedBalance = async () => {
 		accessed = true;
 		throw new Error("wallet must not be accessed");
 	};
@@ -153,12 +147,8 @@ test("casino is disabled by default and test mode blocks before wallet access", 
 	assert.equal(transfers.length, 0);
 });
 
-test("house-account mappings and insufficient payout reserves reject bets before transfer", async t => {
+test("insufficient payout reserves reject bets before transfer", async t => {
 	await withNormalMode(async () => {
-		const mapped = await createCasino(t, { houseUsers: [ "discord-user" ] });
-		await assert.rejects(mapped.service.play("user-5", "coinflip", "heads", "0.1"), /must not be assigned/);
-		assert.equal(mapped.transfers.length, 0);
-
 		const underfunded = await createCasino(t, { houseBalance: 1_000_000_000n });
 		await assert.rejects(underfunded.service.play("user-6", "roulette", "17", "0.1"), /not have enough unlocked MRL/);
 		assert.equal(underfunded.transfers.length, 0);

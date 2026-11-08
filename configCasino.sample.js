@@ -26,6 +26,5 @@ export default {
 		dice: ""
 	},
 	casinoMinBet: "0.001",
-	casinoMaxBet: "0.1",
 	casinoFeeReserve: "0.01"
 };

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { UserError } from "../core/command-utils.js";
 import { formatMRL, getUserAccount, getUserAddress, parseMRL } from "../api/wallet.js";
-import { getUserIdsByAccount } from "../api/wallet-users.js";
 import { resolveCoinflip, resolveDice, resolveRoulette, rollDice, spinRoulette, tossCoin } from "./casino-games.js";
 
 function configuredAmount(value, name) {
@@ -39,22 +38,29 @@ function shortError(ex) {
 }
 
 export default class CasinoService {
-	constructor({ wallet, config, store, sendTransaction, dependencies = {} }) {
+	constructor({ wallet, config, store, sendTransaction, sendStakeTransaction, sendPayoutTransaction, dependencies = {} }) {
 		this.wallet = wallet;
+		this.houseWallet = dependencies.houseWallet || wallet;
 		this.config = config;
 		this.store = store;
 		this.getUserAccount = dependencies.getUserAccount || getUserAccount;
 		this.getUserAddress = dependencies.getUserAddress || getUserAddress;
-		this.getUserIdsByAccount = dependencies.getUserIdsByAccount || getUserIdsByAccount;
 		this.tossCoin = dependencies.tossCoin || tossCoin;
 		this.spinRoulette = dependencies.spinRoulette || spinRoulette;
 		this.rollDice = dependencies.rollDice || rollDice;
 		this.onWin = dependencies.onWin || (async () => {});
-		this.sendTransaction = sendTransaction || (async options => {
+		this.sendStakeTransaction = sendStakeTransaction || sendTransaction || (async options => {
 			if(process.env.MORELOBOT_TEST_MODE === "1") {
 				throw new UserError("MRL transfers are disabled in test mode.");
 			}
 			const transaction = await this.wallet.createTx({ ...options, relay: true });
+			return transaction.getHash();
+		});
+		this.sendPayoutTransaction = sendPayoutTransaction || sendTransaction || (async options => {
+			if(process.env.MORELOBOT_TEST_MODE === "1") {
+				throw new UserError("MRL transfers are disabled in test mode.");
+			}
+			const transaction = await this.houseWallet.createTx({ ...options, relay: true });
 			return transaction.getHash();
 		});
 		this.queue = Promise.resolve();
@@ -72,7 +78,7 @@ export default class CasinoService {
 
 	async playNow(userId, game, selection, amountText) {
 		if(this.config.casinoEnabled !== true) {
-			throw new UserError("MRL casino is disabled until its house account and limits are configured.");
+			throw new UserError("MRL casino is disabled until its house wallet is configured.");
 		}
 		if(process.env.MORELOBOT_TEST_MODE === "1") {
 			throw new UserError("MRL transfers are disabled in test mode.");
@@ -81,46 +87,23 @@ export default class CasinoService {
 
 		const stake = parseMRL(amountText);
 		const minimum = configuredAmount(this.config.casinoMinBet, "casinoMinBet");
-		const maximum = configuredAmount(this.config.casinoMaxBet, "casinoMaxBet");
 		const feeReserve = configuredAmount(this.config.casinoFeeReserve, "casinoFeeReserve");
-		if(minimum > maximum || stake < minimum || stake > maximum) {
-			throw new UserError("Bet must be between " + formatMRL(minimum) + " and " + formatMRL(maximum) + ".");
+		if(stake < minimum) {
+			throw new UserError("Bet must be at least " + formatMRL(minimum) + ".");
 		}
 
-		const houseAccountIndex = Number(this.config.casinoHouseAccountIndex);
-		if(!Number.isSafeInteger(houseAccountIndex) || houseAccountIndex < 1) {
-			throw new UserError("Casino house account is not configured.");
-		}
 		const openWager = await this.store.getOpenWager(userId);
 		if(openWager) {
 			throw new UserError("Wager " + openWager.id.slice(0, 8) + " needs review before you can play again.");
 		}
 
-		const { result } = await this.wallet.getRpcConnection().sendJsonRequest("get_accounts");
-		const houseAccount = result?.subaddress_accounts?.find(account => Number(account.account_index) === houseAccountIndex);
-		if(!houseAccount) {
-			throw new UserError("Configured casino house account does not exist in the wallet.");
-		}
-		const houseUsers = await this.getUserIdsByAccount(
-			this.wallet,
-			this.config.walletUsersPath,
-			houseAccountIndex,
-			this.config.legacyAddressesPath
-		);
-		if(houseUsers.length) {
-			throw new UserError("Casino house account must not be assigned to a Discord user.");
-		}
-
 		const userAccountIndex = await this.getUserAccount(this.wallet, userId, this.config);
-		if(userAccountIndex === houseAccountIndex) {
-			throw new UserError("You cannot place bets from the casino house account.");
-		}
 		const userBalance = await this.wallet.getUnlockedBalance(userAccountIndex);
 		if(userBalance < stake + feeReserve) {
 			throw new UserError("Not enough unlocked MRL to cover the bet and transaction fee.");
 		}
 		const maximumPayout = getMaximumPayout(game, selection, stake);
-		const houseBalance = await this.wallet.getUnlockedBalance(houseAccountIndex);
+		const houseBalance = await this.houseWallet.getUnlockedBalance(0);
 		if(houseBalance < maximumPayout + feeReserve) {
 			throw new UserError("Casino house does not have enough unlocked MRL to cover the maximum payout.");
 		}
@@ -130,7 +113,7 @@ export default class CasinoService {
 		const resolution = game === "coinflip"
 			? resolveCoinflip(selection, outcome, stake)
 			: game === "roulette" ? resolveRoulette(selection, outcome, stake) : resolveDice(selection, outcome, stake);
-		const houseAddress = await this.wallet.getAddress(houseAccountIndex, 0);
+		const houseAddress = await this.houseWallet.getAddress(0, 0);
 		const userAddress = resolution.won
 			? await this.getUserAddress(this.wallet, userId, this.config)
 			: undefined;
@@ -151,7 +134,7 @@ export default class CasinoService {
 
 		let stakeTxHash;
 		try {
-			stakeTxHash = await this.sendTransaction({
+			stakeTxHash = await this.sendStakeTransaction({
 				accountIndex: userAccountIndex,
 				address: houseAddress,
 				amount: stake
@@ -174,8 +157,8 @@ export default class CasinoService {
 		await this.store.updateWager(id, { status: "payout_submitting" });
 		let payoutTxHash;
 		try {
-			payoutTxHash = await this.sendTransaction({
-				accountIndex: houseAccountIndex,
+			payoutTxHash = await this.sendPayoutTransaction({
+				accountIndex: 0,
 				address: userAddress,
 				amount: resolution.payout
 			});
